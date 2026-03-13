@@ -1,0 +1,107 @@
+:root {
+  --bg-1: #120103;
+  --bg-2: #3a0509;
+  --bg-3: #6f0d15;
+  --surface-1: rgba(25, 3, 6, 0.92);
+  --surface-2: rgba(88, 10, 18, 0.82);
+  --border-1: rgba(255, 217, 217, 0.18);
+  --text-1: #ffe9e9;
+  --text-2: #f0b9bd;
+  --shadow-1: rgba(8, 0, 1, 0.62);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  font-family: 'Source Sans 3', sans-serif;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(164, 20, 31, 0.35), transparent 40%),
+    radial-gradient(circle at 100% 100%, rgba(104, 9, 17, 0.28), transparent 35%),
+    linear-gradient(160deg, var(--bg-2), var(--bg-1) 60%, #050001);
+  color: var(--text-1);
+  overflow: hidden;
+}
+
+#map {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  background:
+    radial-gradient(circle at center, rgba(154, 18, 29, 0.3), transparent 46%),
+    linear-gradient(180deg, #270206, #090001 75%);
+}
+
+.crime-emoji-icon {
+  background: transparent;
+  border: 0;
+}
+
+.crime-emoji-marker {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 234, 234, 0.88);
+  box-shadow: 0 10px 26px rgba(56, 3, 8, 0.52);
+  line-height: 1;
+}
+
+.crime-emoji-marker span {
+  font-size: 18px;
+  transform: translateY(1px);
+}
+
+.leaflet-container {
+  background: transparent;
+}
+
+.map-labels-pane {
+  opacity: 0.82;
+  filter: saturate(0.45) brightness(1.25);
+}
+
+.leaflet-control-zoom a,
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip,
+.leaflet-control-attribution {
+  background: var(--surface-1);
+  color: var(--text-1);
+  border-color: var(--border-1);
+}
+
+.leaflet-control-zoom a {
+  border-bottom: 1px solid rgba(255, 217, 217, 0.12);
+}
+
+.leaflet-control-zoom a:hover {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+
+.leaflet-popup-content-wrapper {
+  border: 1px solid var(--border-1);
+  box-shadow: 0 18px 36px var(--shadow-1);
+}
+
+.leaflet-popup-content {
+  font-family: 'Source Sans 3', sans-serif;
+  color: var(--text-1);
+}
+
+.leaflet-popup-content a,
+.leaflet-control-attribution a {
+  color: var(--text-2);
+}
+
+.leaflet-popup-content a:hover,
+.leaflet-control-attribution a:hover {
+  color: var(--text-1);
+}

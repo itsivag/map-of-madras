@@ -1,0 +1,28 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Chennai and Suburbs"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [79.85, 13.30],
+            [79.93, 13.10],
+            [80.05, 12.86],
+            [80.24, 12.86],
+            [80.35, 13.02],
+            [80.41, 13.20],
+            [80.34, 13.37],
+            [80.16, 13.42],
+            [79.95, 13.39],
+            [79.85, 13.30]
+          ]
+        ]
+      }
+    }
+  ]
+}

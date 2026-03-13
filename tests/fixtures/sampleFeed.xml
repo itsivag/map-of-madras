@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Sample Chennai Feed</title>
+    <item>
+      <title>Police arrest suspect in robbery in Adyar</title>
+      <link>https://example.org/chennai-robbery</link>
+      <pubDate>Fri, 07 Mar 2026 09:00:00 GMT</pubDate>
+      <description><![CDATA[Police said the robbery happened near Adyar bus stand.]]></description>
+    </item>
+    <item>
+      <title>Traffic diversion in Chennai this weekend</title>
+      <link>https://example.org/chennai-traffic</link>
+      <pubDate>Fri, 07 Mar 2026 10:00:00 GMT</pubDate>
+      <description><![CDATA[City traffic police announced route changes.]]></description>
+    </item>
+  </channel>
+</rss>

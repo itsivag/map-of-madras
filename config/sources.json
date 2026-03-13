@@ -1,0 +1,34 @@
+[
+  {
+    "id": "the-hindu-chennai",
+    "name": "The Hindu Chennai",
+    "feedUrl": "https://www.thehindu.com/news/cities/chennai/feeder/default.rss",
+    "websiteUrl": "https://www.thehindu.com/news/cities/chennai/",
+    "enabled": true,
+    "parserMode": "rss"
+  },
+  {
+    "id": "toi-chennai",
+    "name": "Times of India Chennai",
+    "feedUrl": "https://timesofindia.indiatimes.com/city/chennai",
+    "websiteUrl": "https://timesofindia.indiatimes.com/city/chennai",
+    "enabled": true,
+    "parserMode": "html-links"
+  },
+  {
+    "id": "google-news-chennai-crime",
+    "name": "Google News Chennai Crime",
+    "feedUrl": "https://news.google.com/rss/search?q=crime+OR+murder+OR+rape+OR+kidnapping+OR+robbery+Chennai&hl=en-IN&gl=IN&ceid=IN:en",
+    "websiteUrl": "https://news.google.com/",
+    "enabled": true,
+    "parserMode": "rss"
+  },
+  {
+    "id": "indian-express-chennai",
+    "name": "Indian Express Chennai",
+    "feedUrl": "https://indianexpress.com/section/cities/chennai/feed/",
+    "websiteUrl": "https://indianexpress.com/section/cities/chennai/",
+    "enabled": true,
+    "parserMode": "rss"
+  }
+]

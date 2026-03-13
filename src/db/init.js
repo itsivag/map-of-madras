@@ -1,0 +1,171 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import Database from 'better-sqlite3';
+
+const SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS sources (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  feed_url TEXT NOT NULL,
+  website_url TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  parser_mode TEXT NOT NULL DEFAULT 'rss',
+  last_success_at TEXT,
+  last_error TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS ingestion_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  status TEXT NOT NULL,
+  processed_count INTEGER NOT NULL DEFAULT 0,
+  published_count INTEGER NOT NULL DEFAULT 0,
+  error_count INTEGER NOT NULL DEFAULT 0,
+  error_summary TEXT,
+  details_json TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS articles_raw (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_id TEXT,
+  source_name TEXT,
+  source_url TEXT,
+  canonical_url TEXT,
+  content_hash TEXT,
+  title TEXT,
+  published_at TEXT,
+  content TEXT,
+  normalized_text TEXT,
+  semantic_status TEXT,
+  semantic_model TEXT,
+  last_indexed_at TEXT,
+  fetch_run_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY(fetch_run_id) REFERENCES ingestion_runs(id)
+);
+
+CREATE TABLE IF NOT EXISTS article_chunks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  article_id INTEGER NOT NULL,
+  chunk_index INTEGER NOT NULL,
+  chunk_id TEXT NOT NULL,
+  chunk_text TEXT NOT NULL,
+  chunk_hash TEXT NOT NULL,
+  qdrant_point_id TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY(article_id) REFERENCES articles_raw(id)
+);
+
+CREATE TABLE IF NOT EXISTS semantic_extractions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  article_id INTEGER NOT NULL,
+  model_id TEXT NOT NULL,
+  prompt_version TEXT NOT NULL,
+  pipeline_mode TEXT NOT NULL,
+  evidence_chunk_ids TEXT,
+  raw_json TEXT,
+  decision TEXT NOT NULL,
+  confidence REAL,
+  rejection_reason TEXT,
+  extraction_json TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY(article_id) REFERENCES articles_raw(id)
+);
+
+CREATE TABLE IF NOT EXISTS incidents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  dedupe_key TEXT NOT NULL UNIQUE,
+  category TEXT NOT NULL,
+  subcategory TEXT,
+  occurred_at TEXT,
+  locality TEXT,
+  lat REAL NOT NULL,
+  lng REAL NOT NULL,
+  confidence REAL NOT NULL,
+  source_name TEXT,
+  source_url TEXT,
+  source_domain TEXT,
+  title TEXT,
+  summary TEXT,
+  published_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`;
+
+const INDEX_SQL = `
+CREATE INDEX IF NOT EXISTS idx_incidents_published_at ON incidents(published_at);
+CREATE INDEX IF NOT EXISTS idx_incidents_occurred_at ON incidents(occurred_at);
+CREATE INDEX IF NOT EXISTS idx_incidents_category ON incidents(category);
+CREATE INDEX IF NOT EXISTS idx_articles_raw_run_id ON articles_raw(fetch_run_id);
+CREATE INDEX IF NOT EXISTS idx_articles_raw_canonical_hash ON articles_raw(canonical_url, content_hash);
+CREATE INDEX IF NOT EXISTS idx_article_chunks_article_id ON article_chunks(article_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_article_chunks_article_chunk ON article_chunks(article_id, chunk_index);
+CREATE INDEX IF NOT EXISTS idx_semantic_extractions_article_id ON semantic_extractions(article_id);
+`;
+
+const ARTICLE_RAW_COLUMNS = [
+  ['canonical_url', 'TEXT'],
+  ['content_hash', 'TEXT'],
+  ['semantic_status', 'TEXT'],
+  ['semantic_model', 'TEXT'],
+  ['last_indexed_at', 'TEXT']
+];
+
+export function initDatabase(dbPath, sourceConfigs = []) {
+  const dbDir = path.dirname(dbPath);
+  fs.mkdirSync(dbDir, { recursive: true });
+
+  const db = new Database(dbPath);
+  db.pragma('journal_mode = WAL');
+  db.exec(SCHEMA_SQL);
+  ensureArticlesRawColumns(db);
+  db.exec(INDEX_SQL);
+
+  seedSources(db, sourceConfigs);
+  return db;
+}
+
+function seedSources(db, sourceConfigs) {
+  const statement = db.prepare(`
+    INSERT INTO sources (id, name, feed_url, website_url, enabled, parser_mode, updated_at)
+    VALUES (@id, @name, @feedUrl, @websiteUrl, @enabled, @parserMode, datetime('now'))
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      feed_url = excluded.feed_url,
+      website_url = excluded.website_url,
+      enabled = excluded.enabled,
+      parser_mode = excluded.parser_mode,
+      updated_at = datetime('now')
+  `);
+
+  const tx = db.transaction((sources) => {
+    for (const source of sources) {
+      statement.run({
+        id: source.id,
+        name: source.name,
+        feedUrl: source.feedUrl,
+        websiteUrl: source.websiteUrl || null,
+        enabled: source.enabled ? 1 : 0,
+        parserMode: source.parserMode || 'rss'
+      });
+    }
+  });
+
+  tx(sourceConfigs);
+}
+
+function ensureArticlesRawColumns(db) {
+  const columns = db.prepare(`PRAGMA table_info('articles_raw')`).all();
+  const existing = new Set(columns.map((column) => column.name));
+
+  for (const [name, type] of ARTICLE_RAW_COLUMNS) {
+    if (!existing.has(name)) {
+      db.exec(`ALTER TABLE articles_raw ADD COLUMN ${name} ${type}`);
+    }
+  }
+}

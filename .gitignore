@@ -1,0 +1,6 @@
+node_modules/
+.npm-cache/
+data/
+coverage/
+.DS_Store
+.env

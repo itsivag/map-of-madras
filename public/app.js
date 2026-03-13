@@ -27,6 +27,21 @@ const TIME_PRESETS = [
   { id: '90d', label: 'Last 90 days', hours: 24 * 90 }
 ];
 
+const DEFAULT_META = {
+  boundary: {
+    maxBounds: [
+      [12.86, 79.85],
+      [13.42, 80.41]
+    ],
+    bbox: {
+      minLng: 79.85,
+      minLat: 12.86,
+      maxLng: 80.41,
+      maxLat: 13.42
+    }
+  }
+};
+
 const map = L.map('map', {
   zoomControl: true,
   minZoom: 10,
@@ -47,7 +62,8 @@ const state = {
   baseZoom: 10,
   requestToken: 0,
   timePreset: '30d',
-  pinnedMarker: null
+  pinnedMarker: null,
+  mapControlsInstalled: false
 };
 
 function clearPinnedMarker() {
@@ -246,6 +262,15 @@ async function fetchIncidents(url) {
   return response.json();
 }
 
+async function fetchFallbackJson(path) {
+  const response = await fetch(path);
+  if (!response.ok) {
+    throw new Error(`Unable to load fallback resource: ${path}`);
+  }
+
+  return response.json();
+}
+
 function applyChennaiBounds(meta) {
   state.maxBounds = L.latLngBounds(meta.boundary.maxBounds);
   map.setMaxBounds(state.maxBounds);
@@ -286,6 +311,10 @@ function focusIncidents() {
 }
 
 function installMapControls(maxBounds) {
+  if (state.mapControlsInstalled) {
+    return;
+  }
+
   const tileOptions = {
     maxZoom: 19,
     attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
@@ -322,6 +351,7 @@ function installMapControls(maxBounds) {
   setTimeout(() => map.invalidateSize(), 120);
 
   map.addLayer(markerLayer);
+  state.mapControlsInstalled = true;
 }
 
 function syncTimeControls() {
@@ -334,7 +364,14 @@ function syncTimeControls() {
 async function loadIncidents() {
   const token = ++state.requestToken;
   const url = buildIncidentsUrl();
-  const payload = await fetchIncidents(url);
+  let payload;
+
+  try {
+    payload = await fetchIncidents(url);
+  } catch (error) {
+    console.error('Primary incidents API failed, using fallback snapshot:', error.message);
+    payload = await fetchFallbackJson('./fallback-incidents.json');
+  }
 
   if (token !== state.requestToken) {
     return;
@@ -360,13 +397,25 @@ function wireControls() {
 }
 
 async function init() {
-  try {
-    syncTimeControls();
-    wireControls();
+  syncTimeControls();
+  wireControls();
+  installMapControls(DEFAULT_META.boundary.maxBounds);
+  applyChennaiBounds(DEFAULT_META);
 
+  try {
     const meta = await fetchMeta();
-    installMapControls(meta.boundary.maxBounds);
     applyChennaiBounds(meta);
+  } catch (error) {
+    console.error('Primary metadata API failed, using fallback boundary:', error.message);
+    try {
+      const fallbackMeta = await fetchFallbackJson('./fallback-meta.json');
+      applyChennaiBounds(fallbackMeta);
+    } catch (fallbackError) {
+      console.error('Fallback metadata failed:', fallbackError.message);
+    }
+  }
+
+  try {
     await loadIncidents();
   } catch (error) {
     console.error('Map initialization failed:', error.message);

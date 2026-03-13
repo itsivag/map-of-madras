@@ -22,6 +22,8 @@ describe('frontend smoke checks', () => {
     expect(script).toContain("map.createPane('bloodmap')");
     expect(script).toContain('setMaxBounds');
     expect(script).toContain('/api/incidents');
+    expect(script).toContain('./fallback-incidents.json');
+    expect(script).toContain('./fallback-meta.json');
     expect(script).toContain('TIME_PRESETS');
     expect(script).not.toContain('buildIncidentDetailUrl');
   });

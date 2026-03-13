@@ -15,6 +15,25 @@ function compactText(value = '') {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+function parseJsonArray(value) {
+  if (!value) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.filter((item) => typeof item === 'string' && item.trim());
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed.filter((item) => typeof item === 'string' && item.trim())
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 function markdownToText(value = '') {
   return compactText(
     value
@@ -288,6 +307,16 @@ export function createRssService({
 
   async function fetchHtmlIndexItems(source) {
     const pageUrl = source.feed_url || source.feedUrl || source.website_url || source.websiteUrl;
+    if (!pageUrl) {
+      return [];
+    }
+
+    const includePatterns = parseJsonArray(
+      source.html_link_include_patterns || source.htmlLinkIncludePatterns
+    );
+    const excludePatterns = parseJsonArray(
+      source.html_link_exclude_patterns || source.htmlLinkExcludePatterns
+    );
     const timeout = withTimeout(15000);
 
     try {
@@ -308,7 +337,7 @@ export function createRssService({
       const seen = new Set();
       const items = [];
 
-      $('a[href*="/city/chennai/"][href*="articleshow"]').each((_, el) => {
+      $('a[href]').each((_, el) => {
         if (items.length >= maxItemsPerFeed) {
           return false;
         }
@@ -319,7 +348,11 @@ export function createRssService({
           return;
         }
 
-        if (!link.includes('/city/chennai/') || !link.includes('articleshow')) {
+        const includeMatch =
+          includePatterns.length === 0 || includePatterns.every((pattern) => link.includes(pattern));
+        const excludeMatch = excludePatterns.some((pattern) => link.includes(pattern));
+
+        if (!includeMatch || excludeMatch) {
           return;
         }
 

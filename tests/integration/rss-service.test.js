@@ -36,7 +36,7 @@ describe('rss service', () => {
     expect(firecrawlClient.scrape).toHaveBeenCalledTimes(1);
   });
 
-  it('scrapes TOI Chennai index pages for article links', async () => {
+  it('scrapes HTML index pages using source-configured link patterns', async () => {
     const fetchMock = vi.fn(async () => {
       return new Response(
         `
@@ -50,6 +50,9 @@ describe('rss service', () => {
               </a>
               <a href="/city/bengaluru/not-a-chennai-story/articleshow/999999.cms">
                 Bengaluru article
+              </a>
+              <a href="/city/chennai/short/articleshow/111111.cms">
+                Tiny
               </a>
             </body>
           </html>
@@ -68,12 +71,54 @@ describe('rss service', () => {
       id: 'toi-chennai',
       name: 'Times of India Chennai',
       feed_url: 'https://timesofindia.indiatimes.com/city/chennai',
-      parser_mode: 'html-links'
+      parser_mode: 'html-links',
+      html_link_include_patterns: JSON.stringify(['/city/chennai/', 'articleshow'])
     });
 
     expect(items).toHaveLength(2);
     expect(items[0].link).toContain('/city/chennai/');
     expect(items[1].title).toContain('Scamster');
+  });
+
+  it('supports non-TOI Chennai section pages with generic html-links mode', async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        `
+          <html>
+            <body>
+              <a href="/cities/chennai/2026/Mar/13/drunk-man-dies-after-being-attacked-by-mob-for-urinating-on-woman-from-auto">
+                Drunk man dies after being attacked by mob for urinating on woman from auto
+              </a>
+              <a href="/cities/chennai/2026/Mar/12/man-swindles-rs-1-crore-from-senior-citizen-in-chennai-lands-in-net">
+                Man swindles Rs 1 crore from senior citizen in Chennai, lands in net
+              </a>
+              <a href="/cities/bengaluru/2026/Mar/13/not-relevant">
+                Bengaluru article
+              </a>
+            </body>
+          </html>
+        `,
+        { status: 200, headers: { 'Content-Type': 'text/html' } }
+      );
+    });
+
+    const rss = createRssService({
+      fetchImpl: fetchMock,
+      userAgent: 'test-agent',
+      maxItemsPerFeed: 10
+    });
+
+    const items = await rss.fetchFeedItems({
+      id: 'new-indian-express-chennai',
+      name: 'New Indian Express Chennai',
+      feed_url: 'https://www.newindianexpress.com/cities/chennai',
+      parser_mode: 'html-links',
+      html_link_include_patterns: JSON.stringify(['/cities/chennai/'])
+    });
+
+    expect(items).toHaveLength(2);
+    expect(items[0].link).toContain('/cities/chennai/');
+    expect(items[1].title).toContain('senior citizen');
   });
 
   it('prefers JSON-LD articleBody over fallback body paragraphs', async () => {

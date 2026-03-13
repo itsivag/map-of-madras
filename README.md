@@ -12,6 +12,7 @@ Node + Express + SQLite + Leaflet app that ingests Chennai crime reports every h
 - Crime categorization (`murder`, `rape`, `assault`, `robbery/theft`, `kidnapping`, `fraud/scam`, `drug offense`, `other`)
 - Location extraction + geocoding with Photon and Nominatim
 - Semantic confidence threshold publishing (`>= 0.80`)
+- Diversified Chennai-focused source mix across English and Tamil publishers
 - Developer debug endpoint for inspecting extraction evidence and rejection reasons
 - Full-screen Chennai-only map with emoji markers
 
@@ -74,4 +75,5 @@ Test coverage includes:
 - Markers are based on publicly reported news and are not official police records.
 - Popups are anonymized and avoid personal-identifying details.
 - Source feeds are configurable in `config/sources.json`.
+- `html-links` sources can define `htmlLinkIncludePatterns` and `htmlLinkExcludePatterns` in `config/sources.json`.
 - SQLite is the operational store; Qdrant stores retrieval vectors and evidence chunks.

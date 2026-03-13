@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS sources (
   website_url TEXT,
   enabled INTEGER NOT NULL DEFAULT 1,
   parser_mode TEXT NOT NULL DEFAULT 'rss',
+  html_link_include_patterns TEXT,
+  html_link_exclude_patterns TEXT,
   last_success_at TEXT,
   last_error TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -116,6 +118,11 @@ const ARTICLE_RAW_COLUMNS = [
   ['last_indexed_at', 'TEXT']
 ];
 
+const SOURCE_COLUMNS = [
+  ['html_link_include_patterns', 'TEXT'],
+  ['html_link_exclude_patterns', 'TEXT']
+];
+
 export function initDatabase(dbPath, sourceConfigs = []) {
   const dbDir = path.dirname(dbPath);
   fs.mkdirSync(dbDir, { recursive: true });
@@ -123,6 +130,7 @@ export function initDatabase(dbPath, sourceConfigs = []) {
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   db.exec(SCHEMA_SQL);
+  ensureSourceColumns(db);
   ensureArticlesRawColumns(db);
   db.exec(INDEX_SQL);
 
@@ -132,14 +140,36 @@ export function initDatabase(dbPath, sourceConfigs = []) {
 
 function seedSources(db, sourceConfigs) {
   const statement = db.prepare(`
-    INSERT INTO sources (id, name, feed_url, website_url, enabled, parser_mode, updated_at)
-    VALUES (@id, @name, @feedUrl, @websiteUrl, @enabled, @parserMode, datetime('now'))
+    INSERT INTO sources (
+      id,
+      name,
+      feed_url,
+      website_url,
+      enabled,
+      parser_mode,
+      html_link_include_patterns,
+      html_link_exclude_patterns,
+      updated_at
+    )
+    VALUES (
+      @id,
+      @name,
+      @feedUrl,
+      @websiteUrl,
+      @enabled,
+      @parserMode,
+      @htmlLinkIncludePatterns,
+      @htmlLinkExcludePatterns,
+      datetime('now')
+    )
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       feed_url = excluded.feed_url,
       website_url = excluded.website_url,
       enabled = excluded.enabled,
       parser_mode = excluded.parser_mode,
+      html_link_include_patterns = excluded.html_link_include_patterns,
+      html_link_exclude_patterns = excluded.html_link_exclude_patterns,
       updated_at = datetime('now')
   `);
 
@@ -151,12 +181,29 @@ function seedSources(db, sourceConfigs) {
         feedUrl: source.feedUrl,
         websiteUrl: source.websiteUrl || null,
         enabled: source.enabled ? 1 : 0,
-        parserMode: source.parserMode || 'rss'
+        parserMode: source.parserMode || 'rss',
+        htmlLinkIncludePatterns: Array.isArray(source.htmlLinkIncludePatterns)
+          ? JSON.stringify(source.htmlLinkIncludePatterns)
+          : null,
+        htmlLinkExcludePatterns: Array.isArray(source.htmlLinkExcludePatterns)
+          ? JSON.stringify(source.htmlLinkExcludePatterns)
+          : null
       });
     }
   });
 
   tx(sourceConfigs);
+}
+
+function ensureSourceColumns(db) {
+  const columns = db.prepare(`PRAGMA table_info('sources')`).all();
+  const existing = new Set(columns.map((column) => column.name));
+
+  for (const [name, type] of SOURCE_COLUMNS) {
+    if (!existing.has(name)) {
+      db.exec(`ALTER TABLE sources ADD COLUMN ${name} ${type}`);
+    }
+  }
 }
 
 function ensureArticlesRawColumns(db) {

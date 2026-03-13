@@ -80,14 +80,32 @@ export class IngestService {
     `);
 
     this.selectEnabledSources = db.prepare(`
-      SELECT id, name, feed_url, website_url, enabled, parser_mode, last_success_at, last_error
+      SELECT
+        id,
+        name,
+        feed_url,
+        website_url,
+        enabled,
+        parser_mode,
+        html_link_include_patterns,
+        html_link_exclude_patterns,
+        last_success_at,
+        last_error
       FROM sources
       WHERE enabled = 1
       ORDER BY name ASC
     `);
 
     this.selectAllSources = db.prepare(`
-      SELECT id, name, feed_url, website_url, enabled, parser_mode
+      SELECT
+        id,
+        name,
+        feed_url,
+        website_url,
+        enabled,
+        parser_mode,
+        html_link_include_patterns,
+        html_link_exclude_patterns
       FROM sources
       ORDER BY name ASC
     `);

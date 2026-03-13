@@ -237,16 +237,33 @@ function buildIncidentsUrl() {
 
 function markerPopup(incident) {
   const occurred = incident.occurredAt ? incident.occurredAt.slice(0, 10) : 'Unknown';
-  const sourceLink = incident.sourceUrl
-    ? `<a href="${incident.sourceUrl}" target="_blank" rel="noreferrer">Source article</a>`
-    : 'Source unavailable';
+  const sources = Array.isArray(incident.sources) ? incident.sources : [];
+  const sourceMarkup = sources.length
+    ? `
+        <div style="margin-top: 0.35rem;">
+          <strong>Sources:</strong>
+          <ul style="margin: 0.25rem 0 0 1rem; padding: 0;">
+            ${sources
+              .slice(0, 5)
+              .map((source) => {
+                const label = source.sourceName || source.title || 'Source article';
+                return `<li><a href="${source.sourceUrl}" target="_blank" rel="noreferrer">${label}</a></li>`;
+              })
+              .join('')}
+          </ul>
+        </div>
+      `
+    : incident.sourceUrl
+      ? `<div style="margin-top: 0.35rem;"><a href="${incident.sourceUrl}" target="_blank" rel="noreferrer">Source article</a></div>`
+      : '<div style="margin-top: 0.35rem;">Source unavailable</div>';
 
   return `
     <div>
       <strong>${incident.category}</strong>
       <div><strong>Locality:</strong> ${incident.locality || 'Unknown'}</div>
       <div><strong>Date:</strong> ${occurred}</div>
-      <div style="margin-top: 0.35rem;">${sourceLink}</div>
+      ${incident.sourceCount > 1 ? `<div><strong>Reports:</strong> ${incident.sourceCount}</div>` : ''}
+      ${sourceMarkup}
     </div>
   `;
 }

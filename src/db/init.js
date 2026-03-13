@@ -97,17 +97,62 @@ CREATE TABLE IF NOT EXISTS incidents (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS incident_sources (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  incident_id INTEGER NOT NULL,
+  source_fingerprint TEXT NOT NULL UNIQUE,
+  source_name TEXT,
+  source_url TEXT NOT NULL,
+  source_domain TEXT,
+  title TEXT,
+  published_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY(incident_id) REFERENCES incidents(id)
+);
+
+CREATE TABLE IF NOT EXISTS official_sources (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL,
+  integration_state TEXT NOT NULL,
+  access_mode TEXT NOT NULL,
+  source_url TEXT,
+  notes TEXT,
+  last_success_at TEXT,
+  last_error TEXT,
+  record_count INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS official_police_stations (
+  station_org_id TEXT PRIMARY KEY,
+  station_name TEXT NOT NULL,
+  metro_unit_org_id TEXT NOT NULL,
+  metro_unit_name TEXT NOT NULL,
+  source_name TEXT NOT NULL,
+  source_url TEXT NOT NULL,
+  synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `;
 
 const INDEX_SQL = `
 CREATE INDEX IF NOT EXISTS idx_incidents_published_at ON incidents(published_at);
 CREATE INDEX IF NOT EXISTS idx_incidents_occurred_at ON incidents(occurred_at);
 CREATE INDEX IF NOT EXISTS idx_incidents_category ON incidents(category);
+CREATE INDEX IF NOT EXISTS idx_incidents_merge_lookup ON incidents(category, occurred_at, lat, lng);
 CREATE INDEX IF NOT EXISTS idx_articles_raw_run_id ON articles_raw(fetch_run_id);
 CREATE INDEX IF NOT EXISTS idx_articles_raw_canonical_hash ON articles_raw(canonical_url, content_hash);
 CREATE INDEX IF NOT EXISTS idx_article_chunks_article_id ON article_chunks(article_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_article_chunks_article_chunk ON article_chunks(article_id, chunk_index);
 CREATE INDEX IF NOT EXISTS idx_semantic_extractions_article_id ON semantic_extractions(article_id);
+CREATE INDEX IF NOT EXISTS idx_official_sources_state ON official_sources(integration_state);
+CREATE INDEX IF NOT EXISTS idx_official_police_stations_unit ON official_police_stations(metro_unit_org_id);
+CREATE INDEX IF NOT EXISTS idx_incident_sources_incident_id ON incident_sources(incident_id);
 `;
 
 const ARTICLE_RAW_COLUMNS = [
@@ -133,6 +178,7 @@ export function initDatabase(dbPath, sourceConfigs = []) {
   ensureSourceColumns(db);
   ensureArticlesRawColumns(db);
   db.exec(INDEX_SQL);
+  ensureLegacyIncidentSourceBackfill(db);
 
   seedSources(db, sourceConfigs);
   return db;
@@ -215,4 +261,36 @@ function ensureArticlesRawColumns(db) {
       db.exec(`ALTER TABLE articles_raw ADD COLUMN ${name} ${type}`);
     }
   }
+}
+
+function ensureLegacyIncidentSourceBackfill(db) {
+  db.exec(`
+    INSERT INTO incident_sources (
+      incident_id,
+      source_fingerprint,
+      source_name,
+      source_url,
+      source_domain,
+      title,
+      published_at,
+      updated_at
+    )
+    SELECT
+      incidents.id,
+      lower(hex(randomblob(16))) || ':' || incidents.id,
+      incidents.source_name,
+      incidents.source_url,
+      incidents.source_domain,
+      incidents.title,
+      incidents.published_at,
+      datetime('now')
+    FROM incidents
+    WHERE incidents.source_url IS NOT NULL
+      AND incidents.source_url != ''
+      AND NOT EXISTS (
+        SELECT 1
+        FROM incident_sources
+        WHERE incident_sources.incident_id = incidents.id
+      )
+  `);
 }

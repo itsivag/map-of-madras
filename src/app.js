@@ -87,8 +87,20 @@ function buildIncidentsQuery(query) {
   return { sql, params, from, to, limit, bbox };
 }
 
-export function createApp({ db, ingestService, geoService, rootDir }) {
+export function createApp({ db, ingestService, geoService, officialSourceService = null, rootDir }) {
   const app = express();
+  const selectIncidentSources = db.prepare(`
+    SELECT
+      incident_id,
+      source_name,
+      source_url,
+      source_domain,
+      title,
+      published_at
+    FROM incident_sources
+    WHERE incident_id IN (${Array(2000).fill('?').join(', ')})
+    ORDER BY datetime(COALESCE(published_at, created_at)) DESC, id DESC
+  `);
 
   app.use(express.json());
   app.use('/geo', express.static(path.join(rootDir, 'geo')));
@@ -97,21 +109,57 @@ export function createApp({ db, ingestService, geoService, rootDir }) {
   app.get('/api/incidents', (req, res) => {
     const { sql, params, from, to, limit } = buildIncidentsQuery(req.query);
     const rows = db.prepare(sql).all(...params);
+    const incidentIds = rows.map((row) => row.id);
+    const sourceRows =
+      incidentIds.length > 0
+        ? selectIncidentSources.all(...incidentIds, ...Array(2000 - incidentIds.length).fill(-1))
+        : [];
+    const sourcesByIncident = new Map();
 
-    const incidents = rows.map((row) => ({
-      id: row.id,
-      category: row.category,
-      subcategory: row.subcategory,
-      occurredAt: row.occurred_at,
-      locality: row.locality,
-      lat: row.lat,
-      lng: row.lng,
-      confidence: row.confidence,
-      sourceName: row.source_name,
-      sourceUrl: row.source_url,
-      publishedAt: row.published_at,
-      summary: row.summary
-    }));
+    for (const row of sourceRows) {
+      const existing = sourcesByIncident.get(row.incident_id) || [];
+      existing.push({
+        sourceName: row.source_name,
+        sourceUrl: row.source_url,
+        sourceDomain: row.source_domain,
+        title: row.title,
+        publishedAt: row.published_at
+      });
+      sourcesByIncident.set(row.incident_id, existing);
+    }
+
+    const incidents = rows.map((row) => {
+      const sources = sourcesByIncident.get(row.id) || [];
+
+      return {
+        id: row.id,
+        category: row.category,
+        subcategory: row.subcategory,
+        occurredAt: row.occurred_at,
+        locality: row.locality,
+        lat: row.lat,
+        lng: row.lng,
+        confidence: row.confidence,
+        sourceName: row.source_name,
+        sourceUrl: row.source_url,
+        publishedAt: row.published_at,
+        summary: row.summary,
+        sourceCount: sources.length || (row.source_url ? 1 : 0),
+        sources: sources.length
+          ? sources
+          : row.source_url
+            ? [
+                {
+                  sourceName: row.source_name,
+                  sourceUrl: row.source_url,
+                  sourceDomain: null,
+                  title: null,
+                  publishedAt: row.published_at
+                }
+              ]
+            : []
+      };
+    });
 
     res.json({
       filters: {
@@ -172,8 +220,44 @@ export function createApp({ db, ingestService, geoService, rootDir }) {
           maxLng: geoService.bounds.maxLng,
           maxLat: geoService.bounds.maxLat
         }
-      }
+      },
+      officialSources: officialSourceService ? officialSourceService.getMeta() : null
     });
+  });
+
+  app.get('/api/official/meta', (req, res) => {
+    if (!officialSourceService) {
+      res.status(503).json({ error: 'Official source integration is not initialized.' });
+      return;
+    }
+
+    res.json(officialSourceService.getMeta());
+  });
+
+  app.get('/api/official/police-stations', (req, res) => {
+    if (!officialSourceService) {
+      res.status(503).json({ error: 'Official source integration is not initialized.' });
+      return;
+    }
+
+    const metroUnit = String(req.query.metroUnit || '').trim() || null;
+    res.json({
+      policeStations: officialSourceService.getPoliceStations({ metroUnit })
+    });
+  });
+
+  app.post('/api/official/sync', async (req, res, next) => {
+    if (!officialSourceService) {
+      res.status(503).json({ error: 'Official source integration is not initialized.' });
+      return;
+    }
+
+    try {
+      const result = await officialSourceService.syncAll();
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.get('/api/debug/article', async (req, res, next) => {

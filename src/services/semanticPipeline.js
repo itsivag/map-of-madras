@@ -410,9 +410,11 @@ export class SemanticPipeline {
     const incidentCandidate = publishable
       ? {
           dedupe: buildDedupeKey({
-            sourceUrl: article.sourceUrl,
+            category: extraction.category,
+            subcategory: extraction.subcategory,
             title: article.title,
             occurredAt,
+            locality: geocodeResult.locality,
             lat: geocodeResult.lat,
             lng: geocodeResult.lng
           }),

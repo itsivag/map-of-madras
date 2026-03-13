@@ -3,6 +3,11 @@ import {
   canonicalizeArticleUrl,
   getSourceDomain
 } from './articleUtils.js';
+import {
+  buildSourceFingerprint,
+  isLikelySameIncident,
+  scoreIncidentMatch
+} from './dedupe.js';
 
 function toIsoOrNull(value) {
   if (!value) {
@@ -163,6 +168,32 @@ export class IngestService {
       LIMIT 1
     `);
 
+    this.selectIncidentMergeCandidates = db.prepare(`
+      SELECT
+        id,
+        dedupe_key,
+        category,
+        subcategory,
+        occurred_at,
+        locality,
+        lat,
+        lng,
+        confidence,
+        source_name,
+        source_url,
+        source_domain,
+        title,
+        summary,
+        published_at
+      FROM incidents
+      WHERE category = ?
+        AND datetime(COALESCE(occurred_at, created_at)) BETWEEN datetime(?) AND datetime(?)
+        AND lat BETWEEN ? AND ?
+        AND lng BETWEEN ? AND ?
+      ORDER BY datetime(COALESCE(occurred_at, created_at)) DESC
+      LIMIT 25
+    `);
+
     this.upsertIncident = db.prepare(`
       INSERT INTO incidents (
         dedupe_key,
@@ -194,6 +225,76 @@ export class IngestService {
         source_domain = excluded.source_domain,
         title = excluded.title,
         summary = excluded.summary,
+        published_at = excluded.published_at,
+        updated_at = datetime('now')
+    `);
+
+    this.updateIncidentCanonical = db.prepare(`
+      UPDATE incidents
+      SET
+        dedupe_key = ?,
+        category = ?,
+        subcategory = ?,
+        occurred_at = ?,
+        locality = ?,
+        lat = ?,
+        lng = ?,
+        confidence = ?,
+        source_name = ?,
+        source_url = ?,
+        source_domain = ?,
+        title = ?,
+        summary = ?,
+        published_at = ?,
+        updated_at = datetime('now')
+      WHERE id = ?
+    `);
+
+    this.selectIncidentById = db.prepare(`
+      SELECT
+        id,
+        dedupe_key,
+        category,
+        subcategory,
+        occurred_at,
+        locality,
+        lat,
+        lng,
+        confidence,
+        source_name,
+        source_url,
+        source_domain,
+        title,
+        summary,
+        published_at
+      FROM incidents
+      WHERE id = ?
+    `);
+
+    this.selectIncidentSourceByFingerprint = db.prepare(`
+      SELECT id, incident_id
+      FROM incident_sources
+      WHERE source_fingerprint = ?
+      LIMIT 1
+    `);
+
+    this.insertIncidentSource = db.prepare(`
+      INSERT INTO incident_sources (
+        incident_id,
+        source_fingerprint,
+        source_name,
+        source_url,
+        source_domain,
+        title,
+        published_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(source_fingerprint) DO UPDATE SET
+        incident_id = excluded.incident_id,
+        source_name = excluded.source_name,
+        source_url = excluded.source_url,
+        source_domain = excluded.source_domain,
+        title = excluded.title,
         published_at = excluded.published_at,
         updated_at = datetime('now')
     `);
@@ -288,9 +389,27 @@ export class IngestService {
       return false;
     }
 
-    const existed = this.selectIncidentByDedupe.get(candidate.dedupe.key);
+    const canonicalSourceUrl = canonicalizeArticleUrl(candidate.sourceUrl);
+    const sourceFingerprint = buildSourceFingerprint({
+      sourceUrl: canonicalSourceUrl,
+      title: candidate.title
+    });
+    const existingSource = this.selectIncidentSourceByFingerprint.get(sourceFingerprint);
 
-    this.upsertIncident.run(
+    if (existingSource) {
+      return false;
+    }
+
+    const mergeMatch = this.findMergeTarget(candidate);
+
+    if (mergeMatch) {
+      const merged = this.mergeIntoIncident(mergeMatch.id, candidate);
+      this.attachIncidentSource(merged.id, candidate, canonicalSourceUrl, sourceFingerprint);
+      return false;
+    }
+
+    const existed = this.selectIncidentByDedupe.get(candidate.dedupe.key);
+    const result = this.upsertIncident.run(
       candidate.dedupe.key,
       candidate.category,
       candidate.subcategory,
@@ -300,14 +419,131 @@ export class IngestService {
       candidate.lng,
       candidate.confidence,
       candidate.sourceName,
-      candidate.sourceUrl,
+      canonicalSourceUrl,
       candidate.sourceDomain,
       candidate.title,
       candidate.summary,
       candidate.publishedAt
     );
 
+    const incidentId = existed?.id || Number(result.lastInsertRowid) || this.selectIncidentByDedupe.get(candidate.dedupe.key)?.id;
+    if (incidentId) {
+      this.attachIncidentSource(incidentId, candidate, canonicalSourceUrl, sourceFingerprint);
+    }
+
     return !existed;
+  }
+
+  findMergeTarget(candidate) {
+    const occurredAt = new Date(candidate.occurredAt || Date.now());
+    const from = new Date(occurredAt);
+    const to = new Date(occurredAt);
+    from.setHours(from.getHours() - 24);
+    to.setHours(to.getHours() + 24);
+
+    const lat = Number(candidate.lat);
+    const lng = Number(candidate.lng);
+    const rows = this.selectIncidentMergeCandidates.all(
+      candidate.category,
+      from.toISOString(),
+      to.toISOString(),
+      lat - 0.02,
+      lat + 0.02,
+      lng - 0.02,
+      lng + 0.02
+    );
+
+    let bestMatch = null;
+    let bestScore = -1;
+
+    for (const row of rows) {
+      const existing = {
+        category: row.category,
+        subcategory: row.subcategory,
+        occurredAt: row.occurred_at,
+        locality: row.locality,
+        lat: row.lat,
+        lng: row.lng,
+        title: row.title
+      };
+      const score = scoreIncidentMatch(existing, candidate);
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = row;
+      }
+    }
+
+    return bestMatch && isLikelySameIncident({
+      category: bestMatch.category,
+      subcategory: bestMatch.subcategory,
+      occurredAt: bestMatch.occurred_at,
+      locality: bestMatch.locality,
+      lat: bestMatch.lat,
+      lng: bestMatch.lng,
+      title: bestMatch.title
+    }, candidate)
+      ? bestMatch
+      : null;
+  }
+
+  mergeIntoIncident(incidentId, candidate) {
+    const existing = this.selectIncidentById.get(incidentId);
+    if (!existing) {
+      throw new Error(`Missing incident ${incidentId} during merge.`);
+    }
+
+    const shouldPromoteSource = Number(candidate.confidence || 0) > Number(existing.confidence || 0);
+    const merged = {
+      dedupeKey: existing.dedupe_key,
+      category: existing.category || candidate.category,
+      subcategory: existing.subcategory || candidate.subcategory,
+      occurredAt: existing.occurred_at || candidate.occurredAt,
+      locality: existing.locality || candidate.locality,
+      lat: existing.lat ?? candidate.lat,
+      lng: existing.lng ?? candidate.lng,
+      confidence: Math.max(Number(existing.confidence || 0), Number(candidate.confidence || 0)),
+      sourceName: shouldPromoteSource ? candidate.sourceName : existing.source_name,
+      sourceUrl: shouldPromoteSource
+        ? canonicalizeArticleUrl(candidate.sourceUrl)
+        : existing.source_url,
+      sourceDomain: shouldPromoteSource ? candidate.sourceDomain : existing.source_domain,
+      title: shouldPromoteSource ? candidate.title : existing.title,
+      summary: existing.summary || candidate.summary,
+      publishedAt: existing.published_at || candidate.publishedAt
+    };
+
+    this.updateIncidentCanonical.run(
+      merged.dedupeKey,
+      merged.category,
+      merged.subcategory,
+      merged.occurredAt,
+      merged.locality,
+      merged.lat,
+      merged.lng,
+      merged.confidence,
+      merged.sourceName,
+      merged.sourceUrl,
+      merged.sourceDomain,
+      merged.title,
+      merged.summary,
+      merged.publishedAt,
+      incidentId
+    );
+
+    return { id: incidentId, ...merged };
+  }
+
+  attachIncidentSource(incidentId, candidate, canonicalSourceUrl, sourceFingerprint) {
+    this.insertIncidentSource.run(
+      incidentId,
+      sourceFingerprint,
+      candidate.sourceName,
+      canonicalSourceUrl,
+      candidate.sourceDomain || getSourceDomain(canonicalSourceUrl),
+      candidate.title,
+      candidate.publishedAt
+    );
   }
 
   async processItem({ source, item, runId }) {

@@ -9,6 +9,7 @@ Node + Express + SQLite + Leaflet app that ingests Chennai crime reports every h
 - Hourly ingestion scheduler (`node-cron`) and startup ingestion run
 - Firecrawl-powered article scraping
 - Semantic retrieval pipeline using Bedrock Titan embeddings, Qdrant, and MiniMax M2.1
+- Official-source integration for Tamil Nadu Police metro station masters
 - Crime categorization (`murder`, `rape`, `assault`, `robbery/theft`, `kidnapping`, `fraud/scam`, `drug offense`, `other`)
 - Location extraction + geocoding with Photon and Nominatim
 - Semantic confidence threshold publishing (`>= 0.80`)
@@ -42,11 +43,16 @@ Open [http://localhost:3000](http://localhost:3000)
 - `QDRANT_ARTICLE_COLLECTION` (default `article_chunks_v1`)
 - `QDRANT_TAXONOMY_COLLECTION` (default `crime_taxonomy_v1`)
 - `SEMANTIC_PROMPT_VERSION` (default `semantic-v1`)
+- `TN_POLICE_BASE_URL` (default `https://www.police.tn.gov.in/digigov`)
+- `TN_POLICE_METRO_UNITS` (default `CHENNAI CITY,TAMBARAM CITY,AVADI CITY`)
 
 ## APIs
 
 - `GET /api/incidents?from=ISO&to=ISO&category=...&bbox=minLng,minLat,maxLng,maxLat&limit=...`
 - `GET /api/meta`
+- `GET /api/official/meta`
+- `GET /api/official/police-stations?metroUnit=CHENNAI%20CITY`
+- `POST /api/official/sync`
 - `GET /api/debug/article?url=...`
 - `GET /api/boundary`
 - `POST /api/ingest/run`
@@ -73,6 +79,7 @@ Test coverage includes:
 ## Notes
 
 - Markers are based on publicly reported news and are not official police records.
+- Official-source integration currently ingests the TN Police metro station master; FIR view, arrested-person search, missing-person search, and court cause lists are tracked as blocked because the live official endpoints require token or captcha flows.
 - Popups are anonymized and avoid personal-identifying details.
 - Source feeds are configurable in `config/sources.json`.
 - `html-links` sources can define `htmlLinkIncludePatterns` and `htmlLinkExcludePatterns` in `config/sources.json`.

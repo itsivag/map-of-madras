@@ -22,6 +22,8 @@ export const INGEST_ITEM_TIMEOUT_MS = Number(process.env.INGEST_ITEM_TIMEOUT_MS 
 export const INGEST_RUN_TIME_BUDGET_MS = Number(process.env.INGEST_RUN_TIME_BUDGET_MS || 120000);
 export const PIPELINE_MODE = process.env.PIPELINE_MODE || 'semantic';
 export const SEMANTIC_PUBLISH_THRESHOLD = Number(process.env.SEMANTIC_PUBLISH_THRESHOLD || 0.8);
+export const CORS_ALLOWED_ORIGINS = process.env.CORS_ALLOWED_ORIGINS || '*';
+export const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
 export const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY || '';
 export const USER_AGENT =
   process.env.INGEST_USER_AGENT ||

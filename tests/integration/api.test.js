@@ -395,4 +395,53 @@ describe('API endpoints', () => {
     expect(stationsResponse.body.policeStations).toHaveLength(1);
     expect(stationsResponse.body.policeStations[0].stationName).toBe('ADYAR');
   });
+
+  it('applies CORS headers and protects admin routes when a token is configured', async () => {
+    const protectedApp = createApp({
+      db,
+      ingestService: {
+        pipelineMode: 'semantic',
+        isSemanticConfigured() {
+          return true;
+        },
+        async runIngestion() {
+          return { status: 'success', processedCount: 1, publishedCount: 0 };
+        },
+        async debugArticleByUrl(url) {
+          return { url, decision: 'publish' };
+        }
+      },
+      geoService: {
+        bounds: {
+          minLng: 79.85,
+          minLat: 12.86,
+          maxLng: 80.41,
+          maxLat: 13.42,
+          leafletMaxBounds: [
+            [12.86, 79.85],
+            [13.42, 80.41]
+          ]
+        },
+        boundaryGeoJson: loadBoundaryGeoJson()
+      },
+      officialSourceService,
+      rootDir: ROOT_DIR,
+      corsAllowedOrigins: 'https://itsivag.github.io',
+      adminToken: 'secret-token'
+    });
+
+    const metaResponse = await request(protectedApp)
+      .get('/api/meta')
+      .set('Origin', 'https://itsivag.github.io');
+    expect(metaResponse.status).toBe(200);
+    expect(metaResponse.headers['access-control-allow-origin']).toBe('https://itsivag.github.io');
+
+    const unauthorized = await request(protectedApp).post('/api/ingest/run');
+    expect(unauthorized.status).toBe(401);
+
+    const authorized = await request(protectedApp)
+      .post('/api/ingest/run')
+      .set('Authorization', 'Bearer secret-token');
+    expect(authorized.status).toBe(200);
+  });
 });

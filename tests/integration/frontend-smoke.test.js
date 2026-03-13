@@ -13,18 +13,16 @@ describe('frontend smoke checks', () => {
     const script = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
 
     expect(html).toContain('<div id="map"></div>');
-    expect(html).toContain('id="control-panel"');
+    expect(html).toContain('class="time-widget"');
     expect(html).toContain('id="time-slider"');
-    expect(html).toContain('id="category-toggles"');
-    expect(html).toContain('id="incident-drawer"');
-    expect(html).toContain('leaflet.markercluster');
-    expect(script).toContain('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png');
-    expect(script).toContain('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png');
+    expect(html).not.toContain('id="category-toggles"');
+    expect(html).not.toContain('id="incident-drawer"');
+    expect(script).toContain('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png');
+    expect(script).toContain('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png');
     expect(script).toContain("map.createPane('bloodmap')");
     expect(script).toContain('setMaxBounds');
     expect(script).toContain('/api/incidents');
-    expect(script).toContain('buildIncidentDetailUrl');
     expect(script).toContain('TIME_PRESETS');
-    expect(script).toContain('custom range');
+    expect(script).not.toContain('buildIncidentDetailUrl');
   });
 });

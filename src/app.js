@@ -53,6 +53,17 @@ function toIsoWindow(centerIso, dayOffset) {
   return date.toISOString();
 }
 
+function normalizeAllowedOrigins(value) {
+  if (!value || value === '*') {
+    return '*';
+  }
+
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 function mapIncidentRow(row) {
   if (!row) {
     return null;
@@ -369,8 +380,17 @@ function buildIncidentsQuery(query) {
   return { sql, params, from, to, limit, bbox };
 }
 
-export function createApp({ db, ingestService, geoService, officialSourceService = null, rootDir }) {
+export function createApp({
+  db,
+  ingestService,
+  geoService,
+  officialSourceService = null,
+  rootDir,
+  corsAllowedOrigins = '*',
+  adminToken = ''
+}) {
   const app = express();
+  const allowedOrigins = normalizeAllowedOrigins(corsAllowedOrigins);
   const selectIncidentSources = db.prepare(`
     SELECT
       incident_id,
@@ -385,8 +405,45 @@ export function createApp({ db, ingestService, geoService, officialSourceService
   `);
 
   app.use(express.json());
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+
+    if (allowedOrigins === '*') {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    } else if (origin && allowedOrigins.includes(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+    }
+
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+
+    next();
+  });
   app.use('/geo', express.static(path.join(rootDir, 'geo')));
   app.use(express.static(path.join(rootDir, 'public')));
+
+  function requireAdmin(req, res, next) {
+    if (!adminToken) {
+      next();
+      return;
+    }
+
+    const authorization = String(req.headers.authorization || '');
+    const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+
+    if (token !== adminToken) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    next();
+  }
 
   app.get('/api/incidents', (req, res) => {
     const { sql, params, from, to, limit } = buildIncidentsQuery(req.query);
@@ -544,7 +601,7 @@ export function createApp({ db, ingestService, geoService, officialSourceService
     });
   });
 
-  app.post('/api/official/sync', async (req, res, next) => {
+  app.post('/api/official/sync', requireAdmin, async (req, res, next) => {
     if (!officialSourceService) {
       res.status(503).json({ error: 'Official source integration is not initialized.' });
       return;
@@ -558,7 +615,7 @@ export function createApp({ db, ingestService, geoService, officialSourceService
     }
   });
 
-  app.get('/api/debug/article', async (req, res, next) => {
+  app.get('/api/debug/article', requireAdmin, async (req, res, next) => {
     try {
       const url = String(req.query.url || '').trim();
       if (!url) {
@@ -577,7 +634,7 @@ export function createApp({ db, ingestService, geoService, officialSourceService
     res.json(geoService.boundaryGeoJson);
   });
 
-  app.post('/api/ingest/run', async (req, res, next) => {
+  app.post('/api/ingest/run', requireAdmin, async (req, res, next) => {
     try {
       const result = await ingestService.runIngestion({ trigger: 'manual' });
       res.json(result);

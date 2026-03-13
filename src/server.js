@@ -12,6 +12,8 @@ import {
   INGEST_RUN_TIME_BUDGET_MS,
   PIPELINE_MODE,
   SEMANTIC_PUBLISH_THRESHOLD,
+  CORS_ALLOWED_ORIGINS,
+  ADMIN_TOKEN,
   FIRECRAWL_API_KEY,
   USER_AGENT,
   AWS_REGION,
@@ -100,7 +102,9 @@ async function bootstrap() {
     ingestService,
     geoService,
     officialSourceService,
-    rootDir: ROOT_DIR
+    rootDir: ROOT_DIR,
+    corsAllowedOrigins: CORS_ALLOWED_ORIGINS,
+    adminToken: ADMIN_TOKEN
   });
 
   const server = app.listen(PORT, () => {

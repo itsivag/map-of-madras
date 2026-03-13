@@ -1,4 +1,4 @@
-# Chennai Crime Map (Localhost)
+# Chennai Crime Map
 
 Node + Express + SQLite + Leaflet app that ingests Chennai crime reports every hour and plots semantically extracted incidents on an OpenStreetMap-based map.
 
@@ -26,6 +26,68 @@ npm start
 
 Open [http://localhost:3000](http://localhost:3000)
 
+## Frontend Deploy (GitHub Pages)
+
+The frontend is now deployable as a static site on GitHub Pages.
+
+1. In the GitHub repo, set Pages source to `GitHub Actions`.
+2. Add a repository variable named `PAGES_API_BASE_URL`.
+   Example: `https://your-backend.up.railway.app`
+3. Push to `main`.
+
+The workflow at [deploy-pages.yml](/Users/itsivag/AntigravityProjects/chennai-gbu-map/.github/workflows/deploy-pages.yml) will:
+
+- build a static Pages artifact from `public/`
+- inject the backend base URL into `runtime-config.js`
+- publish the artifact to GitHub Pages
+
+Local Pages build:
+
+```bash
+PAGES_API_BASE_URL=https://your-backend.example.com npm run build:pages
+```
+
+Generated static output goes to `dist-pages/`.
+
+## Backend Deploy
+
+For the current backend architecture, the practical free deployment path is:
+
+1. Deploy the Node API on Railway
+2. Point `QDRANT_URL` at Qdrant Cloud free tier
+3. Store SQLite on a mounted Railway volume by setting `DB_PATH`
+
+The repo includes a [Dockerfile](/Users/itsivag/AntigravityProjects/chennai-gbu-map/Dockerfile) for hosts that prefer container deploys.
+
+Recommended backend env:
+
+```bash
+PORT=3000
+DB_PATH=/data/crime_map.sqlite
+QDRANT_URL=https://your-qdrant-cluster-url
+CORS_ALLOWED_ORIGINS=https://itsivag.github.io
+ADMIN_TOKEN=your-random-admin-token
+```
+
+If `ADMIN_TOKEN` is set, these endpoints require `Authorization: Bearer <token>`:
+
+- `POST /api/ingest/run`
+- `POST /api/official/sync`
+- `GET /api/debug/article`
+
+The public map endpoints stay open:
+
+- `GET /api/incidents`
+- `GET /api/meta`
+- `GET /api/boundary`
+
+## Deployment Notes
+
+- GitHub Pages serves only the static frontend. The API must run elsewhere.
+- The frontend reads the backend URL from [runtime-config.js](/Users/itsivag/AntigravityProjects/chennai-gbu-map/public/runtime-config.js).
+- Static asset paths are relative, so the frontend works on project Pages paths like `/chennai/`.
+- `CORS_ALLOWED_ORIGINS` should be narrowed to your actual Pages origin in production.
+
 ## Environment variables
 
 - `PORT` (default `3000`)
@@ -33,6 +95,13 @@ Open [http://localhost:3000](http://localhost:3000)
 - `INGEST_CRON` (default `0 * * * *`)
 - `PIPELINE_MODE` (default `semantic`, `shadow` stores semantic results without publishing)
 - `SEMANTIC_PUBLISH_THRESHOLD` (default `0.8`)
+- `CORS_ALLOWED_ORIGINS` (default `*`)
+- `ADMIN_TOKEN` (optional bearer token for admin/debug routes)
+- `RSS_MAX_ITEMS_PER_FEED` (default `8`)
+- `INGEST_MAX_ITEMS_PER_SOURCE` (default `3`)
+- `INGEST_SOURCE_TIME_BUDGET_MS` (default `30000`)
+- `INGEST_ITEM_TIMEOUT_MS` (default `12000`)
+- `INGEST_RUN_TIME_BUDGET_MS` (default `120000`)
 - `FIRECRAWL_API_KEY` (required for article scraping)
 - `INGEST_USER_AGENT` (default set in `src/config.js`)
 - `AWS_REGION`
@@ -52,10 +121,10 @@ Open [http://localhost:3000](http://localhost:3000)
 - `GET /api/meta`
 - `GET /api/official/meta`
 - `GET /api/official/police-stations?metroUnit=CHENNAI%20CITY`
-- `POST /api/official/sync`
-- `GET /api/debug/article?url=...`
+- `POST /api/official/sync` (`ADMIN_TOKEN` optional protection)
+- `GET /api/debug/article?url=...` (`ADMIN_TOKEN` optional protection)
 - `GET /api/boundary`
-- `POST /api/ingest/run`
+- `POST /api/ingest/run` (`ADMIN_TOKEN` optional protection)
 
 ## Testing
 

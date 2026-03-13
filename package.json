@@ -1,7 +1,7 @@
 {
-  "name": "chennai-gbu-map",
+  "name": "map-of-madras",
   "version": "1.0.0",
-  "description": "Localhost Chennai crime map with hourly RSS ingestion",
+  "description": "Map of Madras with hourly Chennai crime ingestion",
   "type": "module",
   "main": "src/server.js",
   "scripts": {

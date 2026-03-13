@@ -297,9 +297,9 @@ function installMapControls(maxBounds) {
   map.createPane('bloodmap');
   const bloodPane = map.getPane('bloodmap');
   bloodPane.style.zIndex = '200';
-  bloodPane.style.filter = 'sepia(1) hue-rotate(300deg) saturate(2.1) brightness(1.08) contrast(0.96)';
+  bloodPane.style.filter = 'sepia(1) hue-rotate(305deg) saturate(7.5) brightness(0.58) contrast(1.3)';
 
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
     ...tileOptions,
     pane: 'bloodmap'
   }).addTo(map);
@@ -310,7 +310,7 @@ function installMapControls(maxBounds) {
   labelsPane.style.zIndex = '450';
   labelsPane.style.pointerEvents = 'none';
 
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', {
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', {
     ...tileOptions,
     pane: 'labels'
   }).addTo(map);

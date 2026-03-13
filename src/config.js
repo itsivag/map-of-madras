@@ -27,7 +27,7 @@ export const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
 export const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY || '';
 export const USER_AGENT =
   process.env.INGEST_USER_AGENT ||
-  'chennai-crime-map/1.0 (localhost development; contact: local-admin@example.com)';
+  'map-of-madras/1.0 (localhost development; contact: local-admin@example.com)';
 export const AWS_REGION = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || '';
 export const BEDROCK_TITAN_EMBED_MODEL_ID =
   process.env.BEDROCK_TITAN_EMBED_MODEL_ID || 'amazon.titan-embed-text-v2:0';

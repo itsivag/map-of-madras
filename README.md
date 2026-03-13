@@ -1,155 +1,237 @@
-# Chennai Crime Map
+# Map of Madras
 
-Node + Express + SQLite + Leaflet app that ingests Chennai crime reports every hour and plots semantically extracted incidents on an OpenStreetMap-based map.
+Map of Madras is a Chennai-focused incident map that continuously ingests crime-related news coverage, extracts structured incident data, and plots recent incidents on a restricted Chennai map.
 
-## Features
+The app is designed to answer a narrow question:
 
-- Open/free map tiles from OpenStreetMap
-- Chennai + suburbs map restriction via polygon geofence
-- Hourly ingestion scheduler (`node-cron`) and startup ingestion run
-- Firecrawl-powered article scraping
-- Semantic retrieval pipeline using Bedrock Titan embeddings, Qdrant, and MiniMax M2.1
-- Official-source integration for Tamil Nadu Police metro station masters
-- Crime categorization (`murder`, `rape`, `assault`, `robbery/theft`, `kidnapping`, `fraud/scam`, `drug offense`, `other`)
-- Location extraction + geocoding with Photon and Nominatim
-- Semantic confidence threshold publishing (`>= 0.80`)
-- Diversified Chennai-focused source mix across English and Tamil publishers
-- Developer debug endpoint for inspecting extraction evidence and rejection reasons
-- Full-screen Chennai-only map with emoji markers
+"What recent crime incidents reported in Chennai and its suburbs can be mapped to a usable location?"
 
-## Setup
+It is not a general city map, and it is not an official police record system.
 
-```bash
-npm install
-npm start
-```
+## What The App Does
 
-Open [http://localhost:3000](http://localhost:3000)
+- Scrapes Chennai-focused news sources on a schedule
+- Extracts likely crime incidents from articles using a semantic pipeline
+- Resolves incident locations to Chennai-area coordinates
+- Filters incidents to Chennai and its suburbs only
+- Publishes only high-confidence incidents to the map
+- Merges duplicate coverage from multiple outlets into a single marker
+- Shows recent incidents on a constrained web map with a simple time slider
 
-## Frontend Deploy (GitHub Pages)
+## How It Works
 
-The frontend is now deployable as a static site on GitHub Pages.
+### 1. Source ingestion
 
-1. In the GitHub repo, set Pages source to `GitHub Actions`.
-2. Add a repository variable named `PAGES_API_BASE_URL`.
-   Example: `https://your-backend.up.railway.app`
-3. Push to `main`.
+The backend pulls articles from a mixed source list that includes:
 
-The workflow at [deploy-pages.yml](/Users/itsivag/AntigravityProjects/chennai-gbu-map/.github/workflows/deploy-pages.yml) will:
+- Chennai-focused English publishers
+- Chennai-focused Tamil publishers
+- Google News crime search feeds
+- Official-source metadata such as Tamil Nadu Police metro station masters
 
-- build a static Pages artifact from `public/`
-- inject the backend base URL into `runtime-config.js`
-- publish the artifact to GitHub Pages
+### 2. Article extraction
 
-Local Pages build:
+Article pages are fetched through Firecrawl so the app can work across different publisher layouts without brittle per-site scraping rules.
 
-```bash
-PAGES_API_BASE_URL=https://your-backend.example.com npm run build:pages
-```
+### 3. Semantic incident extraction
 
-Generated static output goes to `dist-pages/`.
+Each article is processed through a semantic pipeline built around:
 
-## Backend Deploy
+- Amazon Titan embeddings for vectorization
+- Qdrant for retrieval
+- MiniMax on Bedrock for structured incident extraction
 
-For the current backend architecture, the practical free deployment path is:
+The pipeline extracts:
 
-1. Deploy the Node API on Railway
-2. Point `QDRANT_URL` at Qdrant Cloud free tier
-3. Store SQLite on a mounted Railway volume by setting `DB_PATH`
+- whether the article is describing a real crime event
+- crime category and subcategory
+- time of incident
+- location text
+- evidence chunks supporting the extraction
+- confidence score
 
-The repo includes a [Dockerfile](/Users/itsivag/AntigravityProjects/chennai-gbu-map/Dockerfile) for hosts that prefer container deploys.
+### 4. Chennai-only location filtering
 
-Recommended backend env:
+Resolved locations are geocoded and validated against the Chennai boundary polygon. Incidents outside Chennai and its suburbs are rejected.
 
-```bash
-PORT=3000
-DB_PATH=/data/crime_map.sqlite
-QDRANT_URL=https://your-qdrant-cluster-url
-CORS_ALLOWED_ORIGINS=https://itsivag.github.io
-ADMIN_TOKEN=your-random-admin-token
-```
+### 5. Publishing and deduplication
 
-If `ADMIN_TOKEN` is set, these endpoints require `Authorization: Bearer <token>`:
+Only incidents above the publish threshold are shown on the map. If multiple outlets describe the same incident, the app merges them into one marker and stores multiple source links under that marker.
+
+## Main Features
+
+### Map
+
+- Full-screen web map
+- Chennai + suburbs only
+- Open/free map tiles
+- Minimal top-left time slider
+- Emoji crime markers
+- Hover popup with click-to-pin behavior
+
+### Incident data
+
+- Categories:
+  - `murder`
+  - `rape`
+  - `assault`
+  - `robbery/theft`
+  - `kidnapping`
+  - `fraud/scam`
+  - `drug offense`
+  - `other`
+- Duplicate incident merging across outlets
+- Multiple source links per marker
+- Recent incident filtering by time range
+
+### Ingestion pipeline
+
+- Hourly scheduler
+- Startup ingestion run
+- Firecrawl-based article scraping
+- Semantic retrieval and extraction
+- Qdrant-backed evidence search
+- Bedrock-based structured classification
+- Per-source caps and runtime budgets to stop long ingestion runs from hanging
+
+### Data quality and controls
+
+- Confidence threshold before publishing
+- Debug endpoint for single-article inspection
+- Official-source metadata integration
+- Protected admin endpoints via bearer token
+- CORS support for separate frontend/backend deployment
+
+## Current UI
+
+The frontend is intentionally minimal:
+
+- the map fills the screen
+- only a time/day slider is shown
+- markers open on hover
+- clicking a marker keeps the popup open until the user clicks outside
+
+## API Summary
+
+Public endpoints:
+
+- `GET /api/incidents`
+- `GET /api/incidents/:id`
+- `GET /api/meta`
+- `GET /api/boundary`
+- `GET /api/official/meta`
+- `GET /api/official/police-stations?metroUnit=...`
+
+Protected endpoints when `ADMIN_TOKEN` is configured:
 
 - `POST /api/ingest/run`
 - `POST /api/official/sync`
-- `GET /api/debug/article`
+- `GET /api/debug/article?url=...`
 
-The public map endpoints stay open:
+## Important Limitations
 
-- `GET /api/incidents`
-- `GET /api/meta`
-- `GET /api/boundary`
+- This app maps incidents from reported news coverage, not from authoritative crime records.
+- Official police incident endpoints are not fully integrated because many live official flows require captcha or authenticated session tokens.
+- Geocoding can still be approximate when articles only mention broad locations.
+- Source quality and publisher behavior can affect extraction quality.
 
-## Deployment Notes
+## Deployment Model
 
-- GitHub Pages serves only the static frontend. The API must run elsewhere.
-- The frontend reads the backend URL from [runtime-config.js](/Users/itsivag/AntigravityProjects/chennai-gbu-map/public/runtime-config.js).
-- Static asset paths are relative, so the frontend works on project Pages paths like `/chennai/`.
-- `CORS_ALLOWED_ORIGINS` should be narrowed to your actual Pages origin in production.
+The app is split cleanly for deployment:
 
-## Environment variables
+- frontend: static site, suitable for GitHub Pages
+- backend: Node + Express API, suitable for Railway or another Node host
+- vector store: Qdrant
+- operational store: SQLite
 
-- `PORT` (default `3000`)
-- `DB_PATH` (default `data/crime_map.sqlite`)
-- `INGEST_CRON` (default `0 * * * *`)
-- `PIPELINE_MODE` (default `semantic`, `shadow` stores semantic results without publishing)
-- `SEMANTIC_PUBLISH_THRESHOLD` (default `0.8`)
-- `CORS_ALLOWED_ORIGINS` (default `*`)
-- `ADMIN_TOKEN` (optional bearer token for admin/debug routes)
-- `RSS_MAX_ITEMS_PER_FEED` (default `8`)
-- `INGEST_MAX_ITEMS_PER_SOURCE` (default `3`)
-- `INGEST_SOURCE_TIME_BUDGET_MS` (default `30000`)
-- `INGEST_ITEM_TIMEOUT_MS` (default `12000`)
-- `INGEST_RUN_TIME_BUDGET_MS` (default `120000`)
-- `FIRECRAWL_API_KEY` (required for article scraping)
-- `INGEST_USER_AGENT` (default set in `src/config.js`)
-- `AWS_REGION`
-- `BEDROCK_TITAN_EMBED_MODEL_ID` (default `amazon.titan-embed-text-v2:0`)
-- `BEDROCK_MINIMAX_MODEL_ID` (default `minimax.minimax-m2.1`)
-- `QDRANT_URL`
-- `QDRANT_API_KEY` (optional)
-- `QDRANT_ARTICLE_COLLECTION` (default `article_chunks_v1`)
-- `QDRANT_TAXONOMY_COLLECTION` (default `crime_taxonomy_v1`)
-- `SEMANTIC_PROMPT_VERSION` (default `semantic-v1`)
-- `TN_POLICE_BASE_URL` (default `https://www.police.tn.gov.in/digigov`)
-- `TN_POLICE_METRO_UNITS` (default `CHENNAI CITY,TAMBARAM CITY,AVADI CITY`)
+The repo includes:
 
-## APIs
+- GitHub Pages workflow for the frontend
+- Dockerfile for backend/container deployment
+- runtime frontend API configuration
 
-- `GET /api/incidents?from=ISO&to=ISO&category=...&bbox=minLng,minLat,maxLng,maxLat&limit=...`
-- `GET /api/meta`
-- `GET /api/official/meta`
-- `GET /api/official/police-stations?metroUnit=CHENNAI%20CITY`
-- `POST /api/official/sync` (`ADMIN_TOKEN` optional protection)
-- `GET /api/debug/article?url=...` (`ADMIN_TOKEN` optional protection)
-- `GET /api/boundary`
-- `POST /api/ingest/run` (`ADMIN_TOKEN` optional protection)
+## Tech Stack
 
-## Testing
+- Node.js
+- Express
+- SQLite
+- Leaflet
+- Firecrawl
+- Amazon Bedrock
+- MiniMax
+- Titan Embeddings
+- Qdrant
+- Vitest
+
+## Setup
+
+### 1. Install dependencies
+
+```bash
+npm install
+```
+
+### 2. Create environment file
+
+Create `.env` with the required runtime values.
+
+Minimum practical config:
+
+```env
+PORT=3000
+PIPELINE_MODE=semantic
+FIRECRAWL_API_KEY=your_firecrawl_key
+AWS_BEARER_TOKEN_BEDROCK=your_bedrock_key
+AWS_REGION=us-east-1
+QDRANT_URL=http://localhost:6333
+```
+
+Optional but recommended:
+
+```env
+DB_PATH=data/crime_map.sqlite
+CORS_ALLOWED_ORIGINS=*
+ADMIN_TOKEN=your_admin_token
+RSS_MAX_ITEMS_PER_FEED=8
+INGEST_MAX_ITEMS_PER_SOURCE=3
+INGEST_SOURCE_TIME_BUDGET_MS=30000
+INGEST_ITEM_TIMEOUT_MS=12000
+INGEST_RUN_TIME_BUDGET_MS=120000
+```
+
+### 3. Start Qdrant
+
+If you are running locally with Docker:
+
+```bash
+docker run -d --name qdrant -p 6333:6333 -p 6334:6334 qdrant/qdrant
+```
+
+### 4. Start the app
+
+```bash
+npm start
+```
+
+### 5. Open the map
+
+Open:
+
+```text
+http://localhost:3000
+```
+
+### 6. Trigger ingestion manually if needed
+
+```bash
+curl -H 'Authorization: Bearer YOUR_ADMIN_TOKEN' \
+  -X POST 'http://localhost:3000/api/ingest/run'
+```
+
+If `ADMIN_TOKEN` is not set, the header is not required.
+
+### 7. Run tests
 
 ```bash
 npm test
 ```
-
-Test coverage includes:
-
-- Semantic schema validation
-- Stable chunk generation
-- Qdrant indexing and filtered search glue
-- Bedrock response parsing
-- Boundary checks and geocoding behavior
-- Dedupe key generation
-- RSS parsing and article enrichment
-- Ingestion pipeline DB writes
-- API filters, meta, and debug endpoint behavior
-- Frontend smoke checks for map capabilities
-
-## Notes
-
-- Markers are based on publicly reported news and are not official police records.
-- Official-source integration currently ingests the TN Police metro station master; FIR view, arrested-person search, missing-person search, and court cause lists are tracked as blocked because the live official endpoints require token or captcha flows.
-- Popups are anonymized and avoid personal-identifying details.
-- Source feeds are configurable in `config/sources.json`.
-- `html-links` sources can define `htmlLinkIncludePatterns` and `htmlLinkExcludePatterns` in `config/sources.json`.
-- SQLite is the operational store; Qdrant stores retrieval vectors and evidence chunks.

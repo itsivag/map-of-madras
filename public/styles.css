@@ -1,13 +1,13 @@
 :root {
-  --bg-1: #fff8f8;
-  --bg-2: #fffdfd;
-  --surface-1: rgba(255, 250, 250, 0.96);
-  --surface-2: rgba(255, 235, 237, 0.98);
-  --border-1: rgba(167, 24, 39, 0.18);
-  --border-2: rgba(167, 24, 39, 0.3);
-  --text-1: #5c0b14;
-  --text-2: #8d2331;
-  --shadow-1: rgba(115, 15, 26, 0.18);
+  --bg-1: #120103;
+  --bg-2: #3a0509;
+  --surface-1: rgba(25, 3, 6, 0.9);
+  --surface-2: rgba(88, 10, 18, 0.82);
+  --border-1: rgba(255, 217, 217, 0.18);
+  --border-2: rgba(255, 235, 235, 0.34);
+  --text-1: #ffe9e9;
+  --text-2: #f0b9bd;
+  --shadow-1: rgba(8, 0, 1, 0.62);
 }
 
 * {
@@ -21,8 +21,8 @@ body {
   height: 100%;
   font-family: 'Source Sans 3', sans-serif;
   background:
-    radial-gradient(circle at 20% 0%, rgba(184, 36, 53, 0.12), transparent 40%),
-    linear-gradient(160deg, var(--bg-2), var(--bg-1) 60%, #fff6f7);
+    radial-gradient(circle at 20% 0%, rgba(164, 20, 31, 0.35), transparent 40%),
+    linear-gradient(160deg, var(--bg-2), var(--bg-1) 60%, #050001);
   color: var(--text-1);
   overflow: hidden;
 }
@@ -38,14 +38,14 @@ input {
   width: 100vw;
   height: 100vh;
   background:
-    radial-gradient(circle at center, rgba(191, 34, 53, 0.07), transparent 46%),
-    linear-gradient(180deg, #ffffff, #fff6f7 75%);
+    radial-gradient(circle at center, rgba(154, 18, 29, 0.3), transparent 46%),
+    linear-gradient(180deg, #270206, #090001 75%);
 }
 
 .time-widget {
   position: fixed;
   top: 20px;
-  left: 20px;
+  left: 84px;
   z-index: 600;
   width: min(260px, calc(100vw - 40px));
   padding: 0;
@@ -62,7 +62,7 @@ input {
 
 .time-slider {
   width: 100%;
-  accent-color: #b51e31;
+  accent-color: #ffffff;
 }
 
 .time-slider-scale {
@@ -97,8 +97,8 @@ input {
   width: 34px;
   height: 34px;
   border-radius: 999px;
-  border: 2px solid rgba(255, 255, 255, 0.98);
-  box-shadow: 0 10px 26px rgba(132, 17, 33, 0.28);
+  border: 2px solid rgba(255, 234, 234, 0.88);
+  box-shadow: 0 10px 26px rgba(56, 3, 8, 0.52);
   line-height: 1;
 }
 
@@ -122,8 +122,8 @@ input {
 }
 
 .map-labels-pane {
-  opacity: 0.92;
-  filter: sepia(1) hue-rotate(300deg) saturate(1.8) brightness(1.02);
+  opacity: 0.82;
+  filter: saturate(0.45) brightness(1.25);
 }
 
 .leaflet-control-zoom a,
@@ -167,7 +167,7 @@ input {
 @media (max-width: 720px) {
   .time-widget {
     top: 12px;
-    left: 12px;
-    width: calc(100vw - 24px);
+    left: 68px;
+    width: calc(100vw - 80px);
   }
 }

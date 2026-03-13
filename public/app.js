@@ -316,13 +316,14 @@ function installMapControls(maxBounds) {
   }
 
   const tileOptions = {
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 20,
+    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+    subdomains: 'abcd',
     noWrap: true,
     bounds: maxBounds
   };
 
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', tileOptions).addTo(map);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', tileOptions).addTo(map);
 
   map.whenReady(() => {
     map.invalidateSize();

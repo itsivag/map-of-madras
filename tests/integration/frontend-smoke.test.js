@@ -17,7 +17,7 @@ describe('frontend smoke checks', () => {
     expect(html).toContain('id="time-slider"');
     expect(html).not.toContain('id="category-toggles"');
     expect(html).not.toContain('id="incident-drawer"');
-    expect(script).toContain('https://tile.openstreetmap.org/{z}/{x}/{y}.png');
+    expect(script).toContain('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png');
     expect(script).toContain('setMaxBounds');
     expect(script).toContain('/api/incidents');
     expect(script).toContain('./fallback-incidents.json');

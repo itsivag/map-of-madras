@@ -29,6 +29,76 @@
   </head>
   <body>
     <div id="map"></div>
+    <div class="map-hud">
+      <aside class="control-panel" id="control-panel">
+        <div class="control-panel__eyebrow">Live filter widget</div>
+        <div class="control-panel__title-row">
+          <div>
+            <h1>Chennai Crime Map</h1>
+            <p>Dial time and category filters without leaving the map.</p>
+          </div>
+          <button class="ghost-button" id="reset-filters" type="button">Reset</button>
+        </div>
+
+        <section class="filter-section" aria-labelledby="time-filter-label">
+          <div class="filter-section__header">
+            <div>
+              <h2 id="time-filter-label">Time slider</h2>
+              <p>Jump between 24 hours, 7 days, 30 days, or a custom range.</p>
+            </div>
+            <span class="filter-badge" id="time-range-label">Last 30 days</span>
+          </div>
+
+          <div class="time-slider-card">
+            <input
+              id="time-slider"
+              class="time-slider"
+              type="range"
+              min="0"
+              max="3"
+              step="1"
+              value="2"
+              aria-label="Time range slider"
+            />
+            <div class="time-option-row" role="tablist" aria-label="Time presets">
+              <button class="time-option" data-preset="24h" type="button">24h</button>
+              <button class="time-option" data-preset="7d" type="button">7d</button>
+              <button class="time-option is-active" data-preset="30d" type="button">30d</button>
+              <button class="time-option" data-preset="custom" type="button">Custom</button>
+            </div>
+          </div>
+
+          <div class="custom-range" id="custom-range" hidden>
+            <label class="field">
+              <span>From</span>
+              <input id="custom-from" type="datetime-local" />
+            </label>
+            <label class="field">
+              <span>To</span>
+              <input id="custom-to" type="datetime-local" />
+            </label>
+            <button class="apply-button" id="apply-custom-range" type="button">Apply range</button>
+          </div>
+        </section>
+
+        <section class="filter-section" aria-labelledby="category-filter-label">
+          <div class="filter-section__header">
+            <div>
+              <h2 id="category-filter-label">Category toggles</h2>
+              <p>Quickly switch offense types on or off.</p>
+            </div>
+            <span class="filter-badge" id="category-count-label">8 active</span>
+          </div>
+
+          <div class="category-toggle-grid" id="category-toggles"></div>
+        </section>
+
+        <footer class="control-panel__footer">
+          <div class="results-summary" id="results-summary">Loading incidents...</div>
+          <div class="filter-status" id="filter-status">Preparing map data...</div>
+        </footer>
+      </aside>
+    </div>
 
     <script
       src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"

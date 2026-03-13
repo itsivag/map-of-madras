@@ -20,6 +20,24 @@ const CATEGORY_EMOJIS = {
   other: '📍'
 };
 
+const CATEGORY_ORDER = [
+  'murder',
+  'rape',
+  'assault',
+  'robbery/theft',
+  'kidnapping',
+  'fraud/scam',
+  'drug offense',
+  'other'
+];
+
+const TIME_PRESETS = [
+  { id: '24h', label: '24 hours' },
+  { id: '7d', label: '7 days' },
+  { id: '30d', label: '30 days' },
+  { id: 'custom', label: 'Custom range' }
+];
+
 const map = L.map('map', {
   zoomControl: true,
   minZoom: 10,
@@ -30,16 +48,191 @@ const map = L.map('map', {
 
 const markerLayer = L.layerGroup();
 
+const timeSlider = document.querySelector('#time-slider');
+const timeOptionButtons = [...document.querySelectorAll('.time-option')];
+const timeRangeLabel = document.querySelector('#time-range-label');
+const customRangeSection = document.querySelector('#custom-range');
+const customFromInput = document.querySelector('#custom-from');
+const customToInput = document.querySelector('#custom-to');
+const applyCustomRangeButton = document.querySelector('#apply-custom-range');
+const categoryToggles = document.querySelector('#category-toggles');
+const categoryCountLabel = document.querySelector('#category-count-label');
+const resultsSummary = document.querySelector('#results-summary');
+const filterStatus = document.querySelector('#filter-status');
+const resetFiltersButton = document.querySelector('#reset-filters');
+
 const state = {
   maxBounds: null,
   incidents: [],
-  baseZoom: 10
+  baseZoom: 10,
+  requestToken: 0,
+  filters: {
+    timePreset: '30d',
+    customFrom: null,
+    customTo: null,
+    categories: new Set(CATEGORY_ORDER)
+  }
 };
 
+function formatDateTimeLocal(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function toDisplayLabel(value) {
+  return value
+    .split('/')
+    .map((part) => part.replace(/\b\w/g, (char) => char.toUpperCase()))
+    .join(' / ');
+}
+
+function computeFromDateForPreset(preset) {
+  const from = new Date();
+
+  if (preset === '24h') {
+    from.setHours(from.getHours() - 24);
+    return from;
+  }
+
+  if (preset === '7d') {
+    from.setDate(from.getDate() - 7);
+    return from;
+  }
+
+  from.setDate(from.getDate() - 30);
+  return from;
+}
+
+function formatFilterDate(isoString) {
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) {
+    return 'Unknown';
+  }
+
+  return new Intl.DateTimeFormat('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  }).format(date);
+}
+
+function getTimePresetIndex(presetId) {
+  const index = TIME_PRESETS.findIndex((preset) => preset.id === presetId);
+  return index === -1 ? 2 : index;
+}
+
+function syncTimeControls() {
+  timeSlider.value = String(getTimePresetIndex(state.filters.timePreset));
+
+  for (const button of timeOptionButtons) {
+    const active = button.dataset.preset === state.filters.timePreset;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-selected', String(active));
+  }
+
+  const customActive = state.filters.timePreset === 'custom';
+  customRangeSection.hidden = !customActive;
+}
+
+function renderCategoryToggles() {
+  categoryToggles.innerHTML = '';
+
+  for (const category of CATEGORY_ORDER) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'category-toggle';
+    button.dataset.category = category;
+
+    const isActive = state.filters.categories.has(category);
+    button.classList.toggle('is-active', isActive);
+    button.setAttribute('aria-pressed', String(isActive));
+    button.innerHTML = `
+      <span class="category-toggle__swatch" style="background:${CATEGORY_COLORS[category]}"></span>
+      <span class="category-toggle__emoji">${CATEGORY_EMOJIS[category]}</span>
+      <span class="category-toggle__label">${toDisplayLabel(category)}</span>
+    `;
+
+    button.addEventListener('click', () => {
+      if (state.filters.categories.has(category)) {
+        state.filters.categories.delete(category);
+      } else {
+        state.filters.categories.add(category);
+      }
+
+      renderCategoryToggles();
+      updateCategorySummary();
+      loadIncidents();
+    });
+
+    categoryToggles.appendChild(button);
+  }
+}
+
+function updateCategorySummary() {
+  const activeCount = state.filters.categories.size;
+  categoryCountLabel.textContent = `${activeCount} active`;
+}
+
+function setStatus(message, tone = 'muted') {
+  filterStatus.textContent = message;
+  filterStatus.dataset.tone = tone;
+}
+
+function getResolvedRange() {
+  const to = new Date();
+
+  if (state.filters.timePreset !== 'custom') {
+    const from = computeFromDateForPreset(state.filters.timePreset);
+    return {
+      fromIso: from.toISOString(),
+      toIso: to.toISOString(),
+      label: `Last ${TIME_PRESETS[getTimePresetIndex(state.filters.timePreset)].label}`
+    };
+  }
+
+  const fromDate = new Date(customFromInput.value);
+  const toDate = new Date(customToInput.value);
+
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+    throw new Error('Pick both custom dates before applying the range.');
+  }
+
+  if (fromDate > toDate) {
+    throw new Error('Custom range start must be earlier than the end date.');
+  }
+
+  return {
+    fromIso: fromDate.toISOString(),
+    toIso: toDate.toISOString(),
+    label: `${formatFilterDate(fromDate.toISOString())} to ${formatFilterDate(toDate.toISOString())}`
+  };
+}
+
 function buildIncidentsUrl() {
+  if (state.filters.categories.size === 0) {
+    return { url: null, rangeLabel: 'No categories selected' };
+  }
+
+  const { fromIso, toIso, label } = getResolvedRange();
   const params = new URLSearchParams();
   params.set('limit', '1500');
-  return `/api/incidents?${params.toString()}`;
+  params.set('from', fromIso);
+  params.set('to', toIso);
+
+  if (state.filters.categories.size !== CATEGORY_ORDER.length) {
+    params.set('category', [...state.filters.categories].join(','));
+  }
+
+  return {
+    url: `/api/incidents?${params.toString()}`,
+    rangeLabel: label
+  };
 }
 
 function markerPopup(incident) {
@@ -99,13 +292,12 @@ async function fetchMeta() {
   return response.json();
 }
 
-async function fetchIncidents() {
-  const response = await fetch(buildIncidentsUrl());
+async function fetchIncidents(url) {
+  const response = await fetch(url);
   if (!response.ok) {
     throw new Error('Unable to load incidents');
   }
-  const payload = await response.json();
-  return payload.incidents || [];
+  return response.json();
 }
 
 function applyChennaiBounds(meta) {
@@ -126,6 +318,9 @@ function applyChennaiBounds(meta) {
 
 function focusIncidents() {
   if (!state.incidents.length) {
+    if (state.maxBounds) {
+      map.fitBounds(state.maxBounds, { padding: [24, 24], animate: false });
+    }
     return;
   }
 
@@ -182,16 +377,136 @@ function installMapControls(maxBounds) {
   map.addLayer(markerLayer);
 }
 
+function updateSummary(rangeLabel) {
+  const activeCategories = state.filters.categories.size;
+
+  if (activeCategories === 0) {
+    timeRangeLabel.textContent = 'No time range';
+    resultsSummary.textContent = 'No categories selected. Turn at least one offense type back on.';
+    return;
+  }
+
+  timeRangeLabel.textContent = rangeLabel;
+
+  const incidentCount = state.incidents.length;
+  const categoryText = activeCategories === CATEGORY_ORDER.length ? 'all categories' : `${activeCategories} categories`;
+  const incidentText = incidentCount === 1 ? '1 incident' : `${incidentCount} incidents`;
+  resultsSummary.textContent = `Showing ${incidentText} across ${categoryText}.`;
+}
+
+function initializeCustomRangeDefaults() {
+  const defaultTo = new Date();
+  const defaultFrom = computeFromDateForPreset('30d');
+
+  state.filters.customFrom = defaultFrom.toISOString();
+  state.filters.customTo = defaultTo.toISOString();
+  customFromInput.value = formatDateTimeLocal(defaultFrom);
+  customToInput.value = formatDateTimeLocal(defaultTo);
+}
+
+function resetFilters() {
+  state.filters.timePreset = '30d';
+  state.filters.categories = new Set(CATEGORY_ORDER);
+  initializeCustomRangeDefaults();
+  syncTimeControls();
+  renderCategoryToggles();
+  updateCategorySummary();
+  loadIncidents();
+}
+
+async function loadIncidents() {
+  const token = ++state.requestToken;
+
+  let urlData;
+  try {
+    urlData = buildIncidentsUrl();
+    updateSummary(urlData.rangeLabel);
+  } catch (error) {
+    setStatus(error.message, 'error');
+    return;
+  }
+
+  if (!urlData.url) {
+    renderIncidents([]);
+    focusIncidents();
+    setStatus('Category filters are all off.', 'muted');
+    return;
+  }
+
+  setStatus('Refreshing map incidents...', 'muted');
+
+  try {
+    const payload = await fetchIncidents(urlData.url);
+    if (token !== state.requestToken) {
+      return;
+    }
+
+    renderIncidents(payload.incidents || []);
+    updateSummary(urlData.rangeLabel);
+    focusIncidents();
+    setStatus(`Updated ${new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}`, 'success');
+  } catch (error) {
+    if (token !== state.requestToken) {
+      return;
+    }
+
+    setStatus(error.message, 'error');
+  }
+}
+
+function applyTimePreset(presetId) {
+  state.filters.timePreset = presetId;
+  syncTimeControls();
+
+  if (presetId === 'custom') {
+    updateSummary('Custom range');
+    setStatus('Choose dates and apply the custom range.', 'muted');
+    return;
+  }
+
+  loadIncidents();
+}
+
+function wireControls() {
+  timeSlider.addEventListener('input', () => {
+    const preset = TIME_PRESETS[Number(timeSlider.value)]?.id || '30d';
+    applyTimePreset(preset);
+  });
+
+  for (const button of timeOptionButtons) {
+    button.addEventListener('click', () => {
+      applyTimePreset(button.dataset.preset || '30d');
+    });
+  }
+
+  applyCustomRangeButton.addEventListener('click', () => {
+    state.filters.timePreset = 'custom';
+    syncTimeControls();
+    loadIncidents();
+  });
+
+  resetFiltersButton.addEventListener('click', () => {
+    resetFilters();
+  });
+}
+
 async function init() {
   try {
-    const [meta, incidents] = await Promise.all([fetchMeta(), fetchIncidents()]);
+    initializeCustomRangeDefaults();
+    syncTimeControls();
+    renderCategoryToggles();
+    updateCategorySummary();
+    wireControls();
+
+    const meta = await fetchMeta();
 
     installMapControls(meta.boundary.maxBounds);
     applyChennaiBounds(meta);
-    renderIncidents(incidents);
-    focusIncidents();
+    await loadIncidents();
   } catch (error) {
     console.error('Map initialization failed:', error.message);
+    setStatus(error.message, 'error');
+    resultsSummary.textContent = 'Map initialization failed.';
   }
 }
 

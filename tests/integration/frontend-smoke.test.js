@@ -13,11 +13,16 @@ describe('frontend smoke checks', () => {
     const script = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
 
     expect(html).toContain('<div id="map"></div>');
+    expect(html).toContain('id="control-panel"');
+    expect(html).toContain('id="time-slider"');
+    expect(html).toContain('id="category-toggles"');
     expect(html).toContain('leaflet.markercluster');
     expect(script).toContain('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png');
     expect(script).toContain('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png');
     expect(script).toContain("map.createPane('bloodmap')");
     expect(script).toContain('setMaxBounds');
     expect(script).toContain('/api/incidents');
+    expect(script).toContain('TIME_PRESETS');
+    expect(script).toContain('custom range');
   });
 });

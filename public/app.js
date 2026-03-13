@@ -317,32 +317,12 @@ function installMapControls(maxBounds) {
 
   const tileOptions = {
     maxZoom: 19,
-    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+    attribution: '&copy; OpenStreetMap contributors',
     noWrap: true,
-    bounds: maxBounds,
-    subdomains: 'abcd'
+    bounds: maxBounds
   };
 
-  map.createPane('bloodmap');
-  const bloodPane = map.getPane('bloodmap');
-  bloodPane.style.zIndex = '200';
-  bloodPane.style.filter = 'sepia(1) hue-rotate(305deg) saturate(7.5) brightness(0.58) contrast(1.3)';
-
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
-    ...tileOptions,
-    pane: 'bloodmap'
-  }).addTo(map);
-
-  map.createPane('labels');
-  const labelsPane = map.getPane('labels');
-  labelsPane.classList.add('map-labels-pane');
-  labelsPane.style.zIndex = '450';
-  labelsPane.style.pointerEvents = 'none';
-
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', {
-    ...tileOptions,
-    pane: 'labels'
-  }).addTo(map);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', tileOptions).addTo(map);
 
   map.whenReady(() => {
     map.invalidateSize();

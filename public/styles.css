@@ -121,11 +121,6 @@ input {
   background: transparent;
 }
 
-.map-labels-pane {
-  opacity: 0.82;
-  filter: saturate(0.45) brightness(1.25);
-}
-
 .leaflet-control-zoom a,
 .leaflet-popup-content-wrapper,
 .leaflet-popup-tip,

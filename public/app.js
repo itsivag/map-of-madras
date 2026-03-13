@@ -60,12 +60,20 @@ const categoryCountLabel = document.querySelector('#category-count-label');
 const resultsSummary = document.querySelector('#results-summary');
 const filterStatus = document.querySelector('#filter-status');
 const resetFiltersButton = document.querySelector('#reset-filters');
+const drawerShell = document.querySelector('#drawer-shell');
+const drawerBackdrop = document.querySelector('#drawer-backdrop');
+const incidentDrawer = document.querySelector('#incident-drawer');
+const drawerTitle = document.querySelector('#drawer-title');
+const drawerContent = document.querySelector('#drawer-content');
+const closeDrawerButton = document.querySelector('#close-drawer');
 
 const state = {
   maxBounds: null,
   incidents: [],
   baseZoom: 10,
   requestToken: 0,
+  detailRequestToken: 0,
+  selectedIncidentId: null,
   filters: {
     timePreset: '30d',
     customFrom: null,
@@ -81,6 +89,15 @@ function formatDateTimeLocal(date) {
   const hours = String(date.getHours()).padStart(2, '0');
   const minutes = String(date.getMinutes()).padStart(2, '0');
   return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
 function toDisplayLabel(value) {
@@ -122,6 +139,19 @@ function formatFilterDate(isoString) {
   }).format(date);
 }
 
+function formatDateOnly(isoString) {
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) {
+    return 'Unknown';
+  }
+
+  return new Intl.DateTimeFormat('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  }).format(date);
+}
+
 function getTimePresetIndex(presetId) {
   const index = TIME_PRESETS.findIndex((preset) => preset.id === presetId);
   return index === -1 ? 2 : index;
@@ -136,8 +166,7 @@ function syncTimeControls() {
     button.setAttribute('aria-selected', String(active));
   }
 
-  const customActive = state.filters.timePreset === 'custom';
-  customRangeSection.hidden = !customActive;
+  customRangeSection.hidden = state.filters.timePreset !== 'custom';
 }
 
 function renderCategoryToggles() {
@@ -175,8 +204,7 @@ function renderCategoryToggles() {
 }
 
 function updateCategorySummary() {
-  const activeCount = state.filters.categories.size;
-  categoryCountLabel.textContent = `${activeCount} active`;
+  categoryCountLabel.textContent = `${state.filters.categories.size} active`;
 }
 
 function setStatus(message, tone = 'muted') {
@@ -235,6 +263,10 @@ function buildIncidentsUrl() {
   };
 }
 
+function buildIncidentDetailUrl(incidentId) {
+  return `/api/incidents/${incidentId}`;
+}
+
 function markerPopup(incident) {
   const occurred = incident.occurredAt ? incident.occurredAt.slice(0, 10) : 'Unknown';
   const sources = Array.isArray(incident.sources) ? incident.sources : [];
@@ -285,6 +317,129 @@ function buildEmojiIcon(incident) {
   });
 }
 
+function openDrawer() {
+  drawerShell.classList.remove('is-hidden');
+  incidentDrawer.setAttribute('aria-hidden', 'false');
+}
+
+function closeDrawer() {
+  state.selectedIncidentId = null;
+  drawerShell.classList.add('is-hidden');
+  incidentDrawer.setAttribute('aria-hidden', 'true');
+  drawerTitle.textContent = 'Select a marker';
+  drawerContent.innerHTML =
+    '<p class="drawer-empty">Open a marker to inspect supporting coverage and extracted evidence.</p>';
+}
+
+function renderDrawerLoading(incident) {
+  drawerTitle.textContent = incident.title || `${toDisplayLabel(incident.category)} details`;
+  drawerContent.innerHTML = '<p class="drawer-empty">Loading incident details...</p>';
+  openDrawer();
+}
+
+function buildEvidenceMarkup(evidence) {
+  if (!Array.isArray(evidence) || evidence.length === 0) {
+    return '<p class="drawer-empty">No extracted evidence chunks were stored for this incident.</p>';
+  }
+
+  return evidence
+    .map(
+      (entry) => `
+        <article class="drawer-card">
+          <div class="drawer-card__chips">
+            ${entry.supports
+              .map((support) => `<span class="chip chip--muted">${escapeHtml(toDisplayLabel(support))}</span>`)
+              .join('')}
+          </div>
+          <p>${escapeHtml(entry.text || 'Evidence chunk unavailable.')}</p>
+        </article>
+      `
+    )
+    .join('');
+}
+
+function buildSupportingArticlesMarkup(articles) {
+  if (!Array.isArray(articles) || articles.length === 0) {
+    return '<p class="drawer-empty">No related supporting coverage found.</p>';
+  }
+
+  return articles
+    .map(
+      (article) => `
+        <article class="drawer-card">
+          <div class="drawer-card__header">
+            <h4>${escapeHtml(article.title || article.sourceName || 'Untitled coverage')}</h4>
+            ${article.isPrimary ? '<span class="chip">Primary</span>' : '<span class="chip chip--muted">Related</span>'}
+          </div>
+          <p>${escapeHtml(article.summary || 'No summary available.')}</p>
+          <div class="drawer-meta">
+            <span>${escapeHtml(article.locality || 'Unknown locality')}</span>
+            <span>${escapeHtml(formatDateOnly(article.occurredAt || article.publishedAt))}</span>
+            <span>${Math.round((article.confidence || 0) * 100)}% confidence</span>
+          </div>
+          ${
+            article.sourceUrl
+              ? `<a class="drawer-link" href="${escapeHtml(article.sourceUrl)}" target="_blank" rel="noreferrer">Open source article</a>`
+              : ''
+          }
+        </article>
+      `
+    )
+    .join('');
+}
+
+function renderIncidentDetail(detail) {
+  const incident = detail.incident || {};
+  const extraction = detail.extraction || {};
+  const headline =
+    incident.title || `${toDisplayLabel(incident.category || 'incident')} in ${incident.locality || 'Chennai'}`;
+
+  drawerTitle.textContent = headline;
+  drawerContent.innerHTML = `
+    <section class="drawer-section">
+      <div class="drawer-card drawer-card--hero">
+        <div class="drawer-card__header">
+          <h3>${escapeHtml(headline)}</h3>
+          <span class="chip">${escapeHtml(toDisplayLabel(incident.category || 'other'))}</span>
+        </div>
+        <p>${escapeHtml(incident.summary || 'No summary available.')}</p>
+        <div class="drawer-meta">
+          <span>${escapeHtml(incident.locality || 'Unknown locality')}</span>
+          <span>${escapeHtml(formatDateOnly(incident.occurredAt || incident.publishedAt))}</span>
+          <span>${Math.round((incident.confidence || 0) * 100)}% confidence</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="drawer-section">
+      <div class="drawer-section__header">
+        <h3>Extracted evidence</h3>
+        ${
+          detail.primaryArticle?.sourceUrl
+            ? `<a class="drawer-link" href="${escapeHtml(detail.primaryArticle.sourceUrl)}" target="_blank" rel="noreferrer">Primary source</a>`
+            : ''
+        }
+      </div>
+      <div class="drawer-meta drawer-meta--stack">
+        <span>Subcategory: ${escapeHtml(extraction.subcategory || incident.subcategory || 'Unspecified')}</span>
+        <span>Extracted location: ${escapeHtml(extraction.locationText || incident.locality || 'Unknown')}</span>
+        <span>Extracted time: ${escapeHtml(formatDateOnly(extraction.occurredAt || incident.occurredAt || incident.publishedAt))}</span>
+      </div>
+      ${buildEvidenceMarkup(detail.evidence)}
+    </section>
+
+    <section class="drawer-section">
+      <div class="drawer-section__header">
+        <h3>Supporting articles</h3>
+        <span class="chip chip--muted">${detail.supportingArticles?.length || 0} items</span>
+      </div>
+      ${buildSupportingArticlesMarkup(detail.supportingArticles)}
+    </section>
+  `;
+
+  openDrawer();
+}
+
 function renderIncidents(incidents) {
   markerLayer.clearLayers();
 
@@ -294,6 +449,10 @@ function renderIncidents(incidents) {
       keyboard: true,
       riseOnHover: true
     }).bindPopup(markerPopup(incident));
+
+    marker.on('click', () => {
+      openIncidentDrawer(incident);
+    });
 
     markerLayer.addLayer(marker);
   }
@@ -313,6 +472,14 @@ async function fetchIncidents(url) {
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error('Unable to load incidents');
+  }
+  return response.json();
+}
+
+async function fetchIncidentDetail(incidentId) {
+  const response = await fetch(buildIncidentDetailUrl(incidentId));
+  if (!response.ok) {
+    throw new Error('Unable to load incident details');
   }
   return response.json();
 }
@@ -421,6 +588,29 @@ function initializeCustomRangeDefaults() {
   customToInput.value = formatDateTimeLocal(defaultTo);
 }
 
+async function openIncidentDrawer(incident) {
+  const token = ++state.detailRequestToken;
+  state.selectedIncidentId = incident.id;
+  renderDrawerLoading(incident);
+
+  try {
+    const detail = await fetchIncidentDetail(incident.id);
+    if (token !== state.detailRequestToken || state.selectedIncidentId !== incident.id) {
+      return;
+    }
+
+    renderIncidentDetail(detail);
+  } catch (error) {
+    if (token !== state.detailRequestToken || state.selectedIncidentId !== incident.id) {
+      return;
+    }
+
+    drawerTitle.textContent = incident.title || 'Incident detail';
+    drawerContent.innerHTML = `<p class="drawer-empty">${escapeHtml(error.message)}</p>`;
+    openDrawer();
+  }
+}
+
 function resetFilters() {
   state.filters.timePreset = '30d';
   state.filters.categories = new Set(CATEGORY_ORDER);
@@ -428,6 +618,7 @@ function resetFilters() {
   syncTimeControls();
   renderCategoryToggles();
   updateCategorySummary();
+  closeDrawer();
   loadIncidents();
 }
 
@@ -446,6 +637,7 @@ async function loadIncidents() {
   if (!urlData.url) {
     renderIncidents([]);
     focusIncidents();
+    closeDrawer();
     setStatus('Category filters are all off.', 'muted');
     return;
   }
@@ -459,6 +651,9 @@ async function loadIncidents() {
     }
 
     renderIncidents(payload.incidents || []);
+    if (state.selectedIncidentId && !state.incidents.some((incident) => incident.id === state.selectedIncidentId)) {
+      closeDrawer();
+    }
     updateSummary(urlData.rangeLabel);
     focusIncidents();
     setStatus(`Updated ${new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}`, 'success');
@@ -505,6 +700,20 @@ function wireControls() {
   resetFiltersButton.addEventListener('click', () => {
     resetFilters();
   });
+
+  closeDrawerButton.addEventListener('click', () => {
+    closeDrawer();
+  });
+
+  drawerBackdrop.addEventListener('click', () => {
+    closeDrawer();
+  });
+
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !drawerShell.classList.contains('is-hidden')) {
+      closeDrawer();
+    }
+  });
 }
 
 async function init() {
@@ -514,6 +723,7 @@ async function init() {
     renderCategoryToggles();
     updateCategorySummary();
     wireControls();
+    closeDrawer();
 
     const meta = await fetchMeta();
 

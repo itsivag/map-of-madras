@@ -1,6 +1,8 @@
 import express from 'express';
 import path from 'node:path';
 
+const EVIDENCE_SUPPORT_ORDER = ['offense', 'location', 'time', 'context'];
+
 function parseLimit(rawLimit) {
   const parsed = Number(rawLimit || 500);
   if (!Number.isFinite(parsed)) {
@@ -27,6 +29,286 @@ function defaultFromIso() {
   const date = new Date();
   date.setDate(date.getDate() - 30);
   return date.toISOString();
+}
+
+function parseJson(value, fallback) {
+  if (typeof value !== 'string' || !value) {
+    return fallback;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function toIsoWindow(centerIso, dayOffset) {
+  const date = new Date(centerIso || new Date().toISOString());
+  if (Number.isNaN(date.getTime())) {
+    return new Date().toISOString();
+  }
+
+  date.setDate(date.getDate() + dayOffset);
+  return date.toISOString();
+}
+
+function mapIncidentRow(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    category: row.category,
+    subcategory: row.subcategory,
+    occurredAt: row.occurred_at,
+    locality: row.locality,
+    lat: row.lat,
+    lng: row.lng,
+    confidence: row.confidence,
+    sourceName: row.source_name,
+    sourceUrl: row.source_url,
+    publishedAt: row.published_at,
+    summary: row.summary,
+    title: row.title || null
+  };
+}
+
+function groupEvidenceEntries(extraction, chunkRows) {
+  const grouped = new Map();
+
+  for (const chunkRow of chunkRows) {
+    grouped.set(chunkRow.chunk_id, {
+      chunkId: chunkRow.chunk_id,
+      text: chunkRow.chunk_text,
+      supports: []
+    });
+  }
+
+  for (const entry of Array.isArray(extraction?.evidence) ? extraction.evidence : []) {
+    if (!grouped.has(entry.chunkId)) {
+      grouped.set(entry.chunkId, {
+        chunkId: entry.chunkId,
+        text: null,
+        supports: []
+      });
+    }
+
+    const current = grouped.get(entry.chunkId);
+    if (!current.supports.includes(entry.supports)) {
+      current.supports.push(entry.supports);
+    }
+  }
+
+  return [...grouped.values()]
+    .map((entry) => ({
+      ...entry,
+      supports: entry.supports.sort(
+        (left, right) => EVIDENCE_SUPPORT_ORDER.indexOf(left) - EVIDENCE_SUPPORT_ORDER.indexOf(right)
+      )
+    }))
+    .filter((entry) => entry.text || entry.supports.length > 0);
+}
+
+function getIncidentDetail(db, incidentId) {
+  const incidentRow = db
+    .prepare(
+      `SELECT
+         id,
+         category,
+         subcategory,
+         occurred_at,
+         locality,
+         lat,
+         lng,
+         confidence,
+         source_name,
+         source_url,
+         title,
+         summary,
+         published_at
+       FROM incidents
+       WHERE id = ? AND published_at IS NOT NULL
+       LIMIT 1`
+    )
+    .get(incidentId);
+
+  if (!incidentRow) {
+    return null;
+  }
+
+  const incident = mapIncidentRow(incidentRow);
+  const primaryArticleRow =
+    db
+      .prepare(
+        `SELECT
+           a.id AS article_id,
+           a.source_name,
+           a.source_url,
+           a.title,
+           a.published_at,
+           a.created_at,
+           s.id AS extraction_id,
+           s.decision,
+           s.confidence,
+           s.rejection_reason,
+           s.extraction_json
+         FROM articles_raw a
+         LEFT JOIN semantic_extractions s
+           ON s.id = (
+             SELECT se.id
+             FROM semantic_extractions se
+             WHERE se.article_id = a.id
+             ORDER BY se.id DESC
+             LIMIT 1
+           )
+         WHERE a.source_url = ?
+         ORDER BY a.id DESC
+         LIMIT 1`
+      )
+      .get(incident.sourceUrl) ||
+    db
+      .prepare(
+        `SELECT
+           a.id AS article_id,
+           a.source_name,
+           a.source_url,
+           a.title,
+           a.published_at,
+           a.created_at,
+           s.id AS extraction_id,
+           s.decision,
+           s.confidence,
+           s.rejection_reason,
+           s.extraction_json
+         FROM articles_raw a
+         LEFT JOIN semantic_extractions s
+           ON s.id = (
+             SELECT se.id
+             FROM semantic_extractions se
+             WHERE se.article_id = a.id
+             ORDER BY se.id DESC
+             LIMIT 1
+           )
+         WHERE a.title = ?
+         ORDER BY a.id DESC
+         LIMIT 1`
+      )
+      .get(incident.title);
+
+  const extraction = parseJson(primaryArticleRow?.extraction_json, null);
+  const chunkRows = primaryArticleRow?.article_id
+    ? db
+        .prepare(
+          `SELECT chunk_id, chunk_text
+           FROM article_chunks
+           WHERE article_id = ?
+           ORDER BY chunk_index ASC`
+        )
+        .all(primaryArticleRow.article_id)
+    : [];
+
+  const relatedRows = db
+    .prepare(
+      `SELECT
+         id,
+         category,
+         subcategory,
+         occurred_at,
+         locality,
+         lat,
+         lng,
+         confidence,
+         source_name,
+         source_url,
+         title,
+         summary,
+         published_at
+       FROM incidents
+       WHERE published_at IS NOT NULL
+         AND id != ?
+         AND category = ?
+         AND datetime(COALESCE(occurred_at, created_at)) BETWEEN datetime(?) AND datetime(?)
+         AND lat BETWEEN ? AND ?
+         AND lng BETWEEN ? AND ?
+       ORDER BY datetime(COALESCE(occurred_at, created_at)) DESC
+       LIMIT 8`
+    )
+    .all(
+      incident.id,
+      incident.category,
+      toIsoWindow(incident.occurredAt, -3),
+      toIsoWindow(incident.occurredAt, 3),
+      incident.lat - 0.03,
+      incident.lat + 0.03,
+      incident.lng - 0.03,
+      incident.lng + 0.03
+    );
+
+  const supportingArticles = [
+    {
+      incidentId: incident.id,
+      title: incident.title,
+      sourceName: incident.sourceName,
+      sourceUrl: incident.sourceUrl,
+      publishedAt: incident.publishedAt,
+      occurredAt: incident.occurredAt,
+      locality: incident.locality,
+      category: incident.category,
+      summary: incident.summary,
+      confidence: incident.confidence,
+      isPrimary: true
+    },
+    ...relatedRows.map((row) => {
+      const relatedIncident = mapIncidentRow(row);
+      return {
+        incidentId: relatedIncident.id,
+        title: relatedIncident.title,
+        sourceName: relatedIncident.sourceName,
+        sourceUrl: relatedIncident.sourceUrl,
+        publishedAt: relatedIncident.publishedAt,
+        occurredAt: relatedIncident.occurredAt,
+        locality: relatedIncident.locality,
+        category: relatedIncident.category,
+        summary: relatedIncident.summary,
+        confidence: relatedIncident.confidence,
+        isPrimary: false
+      };
+    })
+  ];
+
+  return {
+    incident,
+    primaryArticle: primaryArticleRow
+      ? {
+          articleId: primaryArticleRow.article_id,
+          sourceName: primaryArticleRow.source_name,
+          sourceUrl: primaryArticleRow.source_url,
+          title: primaryArticleRow.title,
+          publishedAt: primaryArticleRow.published_at,
+          indexedAt: primaryArticleRow.created_at,
+          decision: primaryArticleRow.decision || null,
+          confidence:
+            typeof primaryArticleRow.confidence === 'number'
+              ? primaryArticleRow.confidence
+              : extraction?.confidence || null,
+          rejectionReason: primaryArticleRow.rejection_reason || null
+        }
+      : null,
+    extraction: extraction
+      ? {
+          category: extraction.category,
+          subcategory: extraction.subcategory,
+          occurredAt: extraction.occurredAt,
+          locationText: extraction.locationText,
+          locationPrecision: extraction.locationPrecision,
+          confidence: extraction.confidence
+        }
+      : null,
+    evidence: groupEvidenceEntries(extraction, chunkRows),
+    supportingArticles
+  };
 }
 
 function buildIncidentsQuery(query) {
@@ -169,6 +451,22 @@ export function createApp({ db, ingestService, geoService, officialSourceService
       },
       incidents
     });
+  });
+
+  app.get('/api/incidents/:id', (req, res) => {
+    const incidentId = Number(req.params.id);
+    if (!Number.isInteger(incidentId) || incidentId <= 0) {
+      res.status(400).json({ error: 'Invalid incident id.' });
+      return;
+    }
+
+    const detail = getIncidentDetail(db, incidentId);
+    if (!detail) {
+      res.status(404).json({ error: 'Incident not found.' });
+      return;
+    }
+
+    res.json(detail);
   });
 
   app.get('/api/meta', (req, res) => {

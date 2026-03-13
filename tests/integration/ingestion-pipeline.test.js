@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { describe, it, expect } from 'vitest';
 import { initDatabase } from '../../src/db/init.js';
 import { IngestService } from '../../src/services/ingestService.js';
@@ -245,6 +246,241 @@ describe('ingestion pipeline', () => {
     expect(incidentCount).toBe(1);
     expect(sourceCount).toBe(2);
     expect(incident.source_url).toBe('https://example.org/story-a');
+
+    db.close();
+  });
+
+  it('caps per-source processing and records progress details during a run', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crime-map-limit-test-'));
+    const dbPath = path.join(tempDir, 'limit.sqlite');
+
+    const db = initDatabase(dbPath, [
+      {
+        id: 'source-a',
+        name: 'Source A',
+        feedUrl: 'https://example.org/feed.xml',
+        websiteUrl: 'https://example.org',
+        enabled: true,
+        parserMode: 'rss'
+      }
+    ]);
+
+    const rssService = {
+      async fetchFeedItems() {
+        return [
+          {
+            title: 'Incident 1',
+            link: 'https://example.org/story-1',
+            publishedAt: '2026-03-13T09:00:00.000Z',
+            feedSummary: '',
+            feedContent: ''
+          },
+          {
+            title: 'Incident 2',
+            link: 'https://example.org/story-2',
+            publishedAt: '2026-03-13T09:05:00.000Z',
+            feedSummary: '',
+            feedContent: ''
+          },
+          {
+            title: 'Incident 3',
+            link: 'https://example.org/story-3',
+            publishedAt: '2026-03-13T09:10:00.000Z',
+            feedSummary: '',
+            feedContent: ''
+          }
+        ];
+      },
+      async enrichItem(source, item) {
+        return {
+          sourceId: source.id,
+          sourceName: source.name,
+          sourceUrl: item.link,
+          title: item.title,
+          publishedAt: item.publishedAt,
+          content: item.title
+        };
+      }
+    };
+
+    const semanticPipeline = {
+      isConfigured() {
+        return true;
+      },
+      async analyzeArticle({ article }) {
+        const index = Number(article.title.split(' ').pop());
+        const lat = 13.0836939 + index * 0.01;
+        const lng = 80.270186 + index * 0.01;
+        return {
+          stage: 'ready_to_publish',
+          decision: 'publish',
+          extraction: {
+            category: 'fraud/scam'
+          },
+          incidentCandidate: {
+            dedupe: buildDedupeKey({
+              title: article.title,
+              category: 'fraud/scam',
+              subcategory: 'test',
+              occurredAt: article.publishedAt,
+              locality: `Chennai Sector ${index}`,
+              lat,
+              lng
+            }),
+            category: 'fraud/scam',
+            subcategory: 'test',
+            occurredAt: article.publishedAt,
+            locality: `Chennai Sector ${index}`,
+            lat,
+            lng,
+            confidence: 0.95,
+            sourceName: 'Source A',
+            sourceUrl: article.sourceUrl,
+            sourceDomain: 'example.org',
+            title: article.title,
+            summary: 'Test incident.',
+            publishedAt: new Date().toISOString()
+          }
+        };
+      }
+    };
+
+    const ingestService = new IngestService({
+      db,
+      rssService,
+      semanticPipeline,
+      pipelineMode: 'semantic',
+      publishThreshold: 0.8,
+      maxItemsPerSource: 2,
+      sourceTimeBudgetMs: 10000,
+      itemTimeoutMs: 1000
+    });
+
+    const result = await ingestService.runIngestion({ trigger: 'test-limit' });
+    const run = db.prepare('SELECT * FROM ingestion_runs ORDER BY id DESC LIMIT 1').get();
+    const details = JSON.parse(run.details_json);
+
+    expect(result.status).toBe('success');
+    expect(result.processedCount).toBe(2);
+    expect(result.publishedCount).toBe(1);
+    expect(details.limits.maxItemsPerSource).toBe(2);
+    expect(details.sources[0].discoveredCount).toBe(3);
+    expect(details.sources[0].fetchedCount).toBe(2);
+    expect(details.sources[0].skippedCount).toBe(1);
+    expect(details.sources[0].errors.some((entry) => entry.stage === 'limit')).toBe(true);
+
+    db.close();
+  });
+
+  it('stops the run early when the overall run budget is exceeded', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crime-map-run-budget-test-'));
+    const dbPath = path.join(tempDir, 'run-budget.sqlite');
+
+    const db = initDatabase(dbPath, [
+      {
+        id: 'source-a',
+        name: 'Source A',
+        feedUrl: 'https://example.org/feed-a.xml',
+        websiteUrl: 'https://example.org',
+        enabled: true,
+        parserMode: 'rss'
+      },
+      {
+        id: 'source-b',
+        name: 'Source B',
+        feedUrl: 'https://example.net/feed-b.xml',
+        websiteUrl: 'https://example.net',
+        enabled: true,
+        parserMode: 'rss'
+      }
+    ]);
+
+    const rssService = {
+      async fetchFeedItems(source) {
+        return [
+          {
+            title: `Incident for ${source.id}`,
+            link: `https://${source.id}.example/story-1`,
+            publishedAt: '2026-03-13T09:00:00.000Z',
+            feedSummary: '',
+            feedContent: ''
+          }
+        ];
+      },
+      async enrichItem(source, item) {
+        return {
+          sourceId: source.id,
+          sourceName: source.name,
+          sourceUrl: item.link,
+          title: item.title,
+          publishedAt: item.publishedAt,
+          content: item.title
+        };
+      }
+    };
+
+    const semanticPipeline = {
+      isConfigured() {
+        return true;
+      },
+      async analyzeArticle({ source, article }) {
+        await sleep(30);
+
+        return {
+          stage: 'ready_to_publish',
+          decision: 'publish',
+          extraction: {
+            category: 'fraud/scam'
+          },
+          incidentCandidate: {
+            dedupe: buildDedupeKey({
+              title: article.title,
+              category: 'fraud/scam',
+              subcategory: source.id,
+              occurredAt: article.publishedAt,
+              locality: `${source.name} locality`,
+              lat: source.id === 'source-a' ? 13.08 : 13.18,
+              lng: source.id === 'source-a' ? 80.27 : 80.18
+            }),
+            category: 'fraud/scam',
+            subcategory: source.id,
+            occurredAt: article.publishedAt,
+            locality: `${source.name} locality`,
+            lat: source.id === 'source-a' ? 13.08 : 13.18,
+            lng: source.id === 'source-a' ? 80.27 : 80.18,
+            confidence: 0.95,
+            sourceName: source.name,
+            sourceUrl: article.sourceUrl,
+            sourceDomain: 'example.org',
+            title: article.title,
+            summary: 'Test incident.',
+            publishedAt: new Date().toISOString()
+          }
+        };
+      }
+    };
+
+    const ingestService = new IngestService({
+      db,
+      rssService,
+      semanticPipeline,
+      pipelineMode: 'semantic',
+      publishThreshold: 0.8,
+      maxItemsPerSource: 1,
+      sourceTimeBudgetMs: 1000,
+      itemTimeoutMs: 1000,
+      runTimeBudgetMs: 10
+    });
+
+    const result = await ingestService.runIngestion({ trigger: 'test-run-budget' });
+    const run = db.prepare('SELECT * FROM ingestion_runs ORDER BY id DESC LIMIT 1').get();
+    const details = JSON.parse(run.details_json);
+
+    expect(result.status).toBe('partial');
+    expect(details.runBudgetExceeded).toBe(true);
+    expect(details.sources.some((entry) =>
+      entry.errors.some((error) => error.stage === 'run-budget')
+    )).toBe(true);
 
     db.close();
   });

@@ -214,10 +214,31 @@ function withTimeout(ms = 12000) {
   };
 }
 
+function withPromiseTimeout(promise, ms, label) {
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return promise;
+  }
+
+  let timeoutId = null;
+
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms.`));
+    }, ms);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  });
+}
+
 export function createRssService({
   fetchImpl = fetch,
   userAgent,
   maxItemsPerFeed = 25,
+  articleFetchTimeoutMs = 15000,
   firecrawlApiKey = '',
   firecrawlClient = null
 }) {
@@ -448,11 +469,15 @@ export function createRssService({
       throw new Error('Firecrawl is not configured. Set FIRECRAWL_API_KEY.');
     }
 
-    const document = await firecrawl.scrape(url, {
-      formats: ['markdown', 'html'],
-      onlyMainContent: true,
-      timeout: 15000
-    });
+    const document = await withPromiseTimeout(
+      firecrawl.scrape(url, {
+        formats: ['markdown', 'html'],
+        onlyMainContent: true,
+        timeout: articleFetchTimeoutMs
+      }),
+      articleFetchTimeoutMs + 1000,
+      `Firecrawl scrape for ${url}`
+    );
 
     const parsedHtml = parseArticlePageDataFromHtml(document?.html || '');
     const metadata = {

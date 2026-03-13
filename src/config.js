@@ -13,6 +13,13 @@ loadDotEnv(path.join(ROOT_DIR, '.env'));
 export const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'crime_map.sqlite');
 export const PORT = Number(process.env.PORT || 3000);
 export const INGEST_CRON = process.env.INGEST_CRON || '0 * * * *';
+export const RSS_MAX_ITEMS_PER_FEED = Number(process.env.RSS_MAX_ITEMS_PER_FEED || 8);
+export const INGEST_MAX_ITEMS_PER_SOURCE = Number(process.env.INGEST_MAX_ITEMS_PER_SOURCE || 3);
+export const INGEST_SOURCE_TIME_BUDGET_MS = Number(
+  process.env.INGEST_SOURCE_TIME_BUDGET_MS || 30000
+);
+export const INGEST_ITEM_TIMEOUT_MS = Number(process.env.INGEST_ITEM_TIMEOUT_MS || 12000);
+export const INGEST_RUN_TIME_BUDGET_MS = Number(process.env.INGEST_RUN_TIME_BUDGET_MS || 120000);
 export const PIPELINE_MODE = process.env.PIPELINE_MODE || 'semantic';
 export const SEMANTIC_PUBLISH_THRESHOLD = Number(process.env.SEMANTIC_PUBLISH_THRESHOLD || 0.8);
 export const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY || '';

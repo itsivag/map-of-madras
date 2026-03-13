@@ -5,6 +5,11 @@ import {
   DB_PATH,
   PORT,
   INGEST_CRON,
+  RSS_MAX_ITEMS_PER_FEED,
+  INGEST_MAX_ITEMS_PER_SOURCE,
+  INGEST_SOURCE_TIME_BUDGET_MS,
+  INGEST_ITEM_TIMEOUT_MS,
+  INGEST_RUN_TIME_BUDGET_MS,
   PIPELINE_MODE,
   SEMANTIC_PUBLISH_THRESHOLD,
   FIRECRAWL_API_KEY,
@@ -46,7 +51,8 @@ async function bootstrap() {
   });
   const rssService = createRssService({
     userAgent: USER_AGENT,
-    firecrawlApiKey: FIRECRAWL_API_KEY
+    firecrawlApiKey: FIRECRAWL_API_KEY,
+    maxItemsPerFeed: RSS_MAX_ITEMS_PER_FEED
   });
   const bedrockService = new BedrockSemanticService({
     region: AWS_REGION,
@@ -82,7 +88,11 @@ async function bootstrap() {
     geoService,
     semanticPipeline,
     publishThreshold: SEMANTIC_PUBLISH_THRESHOLD,
-    pipelineMode: PIPELINE_MODE
+    pipelineMode: PIPELINE_MODE,
+    maxItemsPerSource: INGEST_MAX_ITEMS_PER_SOURCE,
+    sourceTimeBudgetMs: INGEST_SOURCE_TIME_BUDGET_MS,
+    itemTimeoutMs: INGEST_ITEM_TIMEOUT_MS,
+    runTimeBudgetMs: INGEST_RUN_TIME_BUDGET_MS
   });
 
   const app = createApp({

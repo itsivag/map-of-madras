@@ -47,6 +47,26 @@ function buildDebugSource(url) {
   };
 }
 
+function withPromiseTimeout(promise, ms, label) {
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return promise;
+  }
+
+  let timeoutId = null;
+
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms.`));
+    }, ms);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  });
+}
+
 export class IngestService {
   constructor({
     db,
@@ -54,7 +74,11 @@ export class IngestService {
     geoService = null,
     semanticPipeline = null,
     pipelineMode = 'semantic',
-    publishThreshold = 0.8
+    publishThreshold = 0.8,
+    maxItemsPerSource = 6,
+    sourceTimeBudgetMs = 90000,
+    itemTimeoutMs = 20000,
+    runTimeBudgetMs = 120000
   }) {
     this.db = db;
     this.rssService = rssService;
@@ -62,6 +86,10 @@ export class IngestService {
     this.semanticPipeline = semanticPipeline;
     this.pipelineMode = pipelineMode === 'shadow' ? 'shadow' : 'semantic';
     this.publishThreshold = publishThreshold;
+    this.maxItemsPerSource = Number.isFinite(maxItemsPerSource) ? maxItemsPerSource : 6;
+    this.sourceTimeBudgetMs = Number.isFinite(sourceTimeBudgetMs) ? sourceTimeBudgetMs : 90000;
+    this.itemTimeoutMs = Number.isFinite(itemTimeoutMs) ? itemTimeoutMs : 20000;
+    this.runTimeBudgetMs = Number.isFinite(runTimeBudgetMs) ? runTimeBudgetMs : 120000;
 
     this.insertRun = db.prepare(`
       INSERT INTO ingestion_runs (
@@ -80,6 +108,16 @@ export class IngestService {
         published_count = ?,
         error_count = ?,
         error_summary = ?,
+        details_json = ?
+      WHERE id = ?
+    `);
+
+    this.updateRunProgress = db.prepare(`
+      UPDATE ingestion_runs
+      SET
+        processed_count = ?,
+        published_count = ?,
+        error_count = ?,
         details_json = ?
       WHERE id = ?
     `);
@@ -648,6 +686,12 @@ export class IngestService {
       pipelineMode: this.pipelineMode,
       semanticConfigured: this.isSemanticConfigured(),
       publishThreshold: this.publishThreshold,
+      limits: {
+        maxItemsPerSource: this.maxItemsPerSource,
+        sourceTimeBudgetMs: this.sourceTimeBudgetMs,
+        itemTimeoutMs: this.itemTimeoutMs,
+        runTimeBudgetMs: this.runTimeBudgetMs
+      },
       sources: []
     };
 
@@ -656,29 +700,89 @@ export class IngestService {
     let processedCount = 0;
     let publishedCount = 0;
     let errorCount = 0;
+    let stoppedEarly = false;
 
     const sources = this.selectEnabledSources.all();
+    const persistProgress = () => {
+      this.updateRunProgress.run(
+        processedCount,
+        publishedCount,
+        errorCount,
+        JSON.stringify(runDetails),
+        runId
+      );
+    };
 
     for (const source of sources) {
+      if (Date.now() - Date.parse(startedAt) >= this.runTimeBudgetMs) {
+        errorCount += 1;
+        stoppedEarly = true;
+        runDetails.runBudgetExceeded = true;
+        runDetails.sources.push({
+          sourceId: source.id,
+          name: source.name,
+          discoveredCount: 0,
+          fetchedCount: 0,
+          processedCount: 0,
+          publishedCount: 0,
+          rejectedCount: 0,
+          skippedCount: 0,
+          errors: [
+            {
+              stage: 'run-budget',
+              message: `Run exceeded ${this.runTimeBudgetMs}ms total budget and stopped before processing this source.`
+            }
+          ]
+        });
+        persistProgress();
+        break;
+      }
+
+      const sourceStartedAt = Date.now();
       const sourceDetail = {
         sourceId: source.id,
         name: source.name,
+        discoveredCount: 0,
         fetchedCount: 0,
         processedCount: 0,
         publishedCount: 0,
         rejectedCount: 0,
+        skippedCount: 0,
         errors: []
       };
 
       try {
-        const items = await this.rssService.fetchFeedItems(source);
+        const discoveredItems = await this.rssService.fetchFeedItems(source);
+        sourceDetail.discoveredCount = discoveredItems.length;
+        const items = discoveredItems.slice(0, this.maxItemsPerSource);
         sourceDetail.fetchedCount = items.length;
+        sourceDetail.skippedCount = Math.max(0, discoveredItems.length - items.length);
+
+        if (sourceDetail.skippedCount > 0) {
+          sourceDetail.errors.push({
+            stage: 'limit',
+            message: `Source capped at ${this.maxItemsPerSource} items for this run.`
+          });
+        }
 
         for (const item of items) {
+          if (Date.now() - sourceStartedAt >= this.sourceTimeBudgetMs) {
+            errorCount += 1;
+            sourceDetail.errors.push({
+              stage: 'budget',
+              message: `Source exceeded ${this.sourceTimeBudgetMs}ms time budget and was stopped early.`
+            });
+            break;
+          }
+
           processedCount += 1;
 
           try {
-            const result = await this.processItem({ source, item, runId });
+            const result = await withPromiseTimeout(
+              this.processItem({ source, item, runId }),
+              this.itemTimeoutMs,
+              `Item processing for ${item.link || source.name}`
+            );
             sourceDetail.processedCount += 1;
 
             if (result.published) {
@@ -694,6 +798,8 @@ export class IngestService {
               message: error.message
             });
           }
+
+          persistProgress();
         }
 
         this.markSourceSuccess.run(new Date().toISOString(), source.id);
@@ -707,10 +813,18 @@ export class IngestService {
       }
 
       runDetails.sources.push(sourceDetail);
+      persistProgress();
     }
 
-    const status =
-      errorCount === 0 ? 'success' : processedCount > 0 || publishedCount > 0 ? 'partial' : 'error';
+    const status = stoppedEarly
+      ? processedCount > 0 || publishedCount > 0
+        ? 'partial'
+        : 'error'
+      : errorCount === 0
+        ? 'success'
+        : processedCount > 0 || publishedCount > 0
+          ? 'partial'
+          : 'error';
     const finishedAt = new Date().toISOString();
     const errorSummary = buildErrorSummary(runDetails.sources);
 

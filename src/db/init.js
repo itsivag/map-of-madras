@@ -111,33 +111,6 @@ CREATE TABLE IF NOT EXISTS incident_sources (
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY(incident_id) REFERENCES incidents(id)
 );
-
-CREATE TABLE IF NOT EXISTS official_sources (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  category TEXT NOT NULL,
-  integration_state TEXT NOT NULL,
-  access_mode TEXT NOT NULL,
-  source_url TEXT,
-  notes TEXT,
-  last_success_at TEXT,
-  last_error TEXT,
-  record_count INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS official_police_stations (
-  station_org_id TEXT PRIMARY KEY,
-  station_name TEXT NOT NULL,
-  metro_unit_org_id TEXT NOT NULL,
-  metro_unit_name TEXT NOT NULL,
-  source_name TEXT NOT NULL,
-  source_url TEXT NOT NULL,
-  synced_at TEXT NOT NULL DEFAULT (datetime('now')),
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
 `;
 
 const INDEX_SQL = `
@@ -150,8 +123,6 @@ CREATE INDEX IF NOT EXISTS idx_articles_raw_canonical_hash ON articles_raw(canon
 CREATE INDEX IF NOT EXISTS idx_article_chunks_article_id ON article_chunks(article_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_article_chunks_article_chunk ON article_chunks(article_id, chunk_index);
 CREATE INDEX IF NOT EXISTS idx_semantic_extractions_article_id ON semantic_extractions(article_id);
-CREATE INDEX IF NOT EXISTS idx_official_sources_state ON official_sources(integration_state);
-CREATE INDEX IF NOT EXISTS idx_official_police_stations_unit ON official_police_stations(metro_unit_org_id);
 CREATE INDEX IF NOT EXISTS idx_incident_sources_incident_id ON incident_sources(incident_id);
 `;
 
@@ -175,6 +146,7 @@ export function initDatabase(dbPath, sourceConfigs = []) {
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   db.exec(SCHEMA_SQL);
+  dropLegacyOfficialSourceTables(db);
   ensureSourceColumns(db);
   ensureArticlesRawColumns(db);
   db.exec(INDEX_SQL);
@@ -239,6 +211,15 @@ function seedSources(db, sourceConfigs) {
   });
 
   tx(sourceConfigs);
+}
+
+function dropLegacyOfficialSourceTables(db) {
+  db.exec(`
+    DROP INDEX IF EXISTS idx_official_sources_state;
+    DROP INDEX IF EXISTS idx_official_police_stations_unit;
+    DROP TABLE IF EXISTS official_sources;
+    DROP TABLE IF EXISTS official_police_stations;
+  `);
 }
 
 function ensureSourceColumns(db) {

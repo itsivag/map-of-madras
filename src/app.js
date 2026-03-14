@@ -1,4 +1,5 @@
 import express from 'express';
+import fs from 'node:fs';
 import path from 'node:path';
 
 const EVIDENCE_SUPPORT_ORDER = ['offense', 'location', 'time', 'context'];
@@ -384,12 +385,14 @@ export function createApp({
   db,
   ingestService,
   geoService,
-  officialSourceService = null,
   rootDir,
   corsAllowedOrigins = '*',
   adminToken = ''
 }) {
   const app = express();
+  const frontendDir = path.join(rootDir, 'out');
+  const frontendIndexPath = path.join(frontendDir, 'index.html');
+  const hasBuiltFrontend = fs.existsSync(frontendIndexPath);
   const allowedOrigins = normalizeAllowedOrigins(corsAllowedOrigins);
   const selectIncidentSources = db.prepare(`
     SELECT
@@ -426,7 +429,6 @@ export function createApp({
     next();
   });
   app.use('/geo', express.static(path.join(rootDir, 'geo')));
-  app.use(express.static(path.join(rootDir, 'public')));
 
   function requireAdmin(req, res, next) {
     if (!adminToken) {
@@ -575,44 +577,8 @@ export function createApp({
           maxLng: geoService.bounds.maxLng,
           maxLat: geoService.bounds.maxLat
         }
-      },
-      officialSources: officialSourceService ? officialSourceService.getMeta() : null
+      }
     });
-  });
-
-  app.get('/api/official/meta', (req, res) => {
-    if (!officialSourceService) {
-      res.status(503).json({ error: 'Official source integration is not initialized.' });
-      return;
-    }
-
-    res.json(officialSourceService.getMeta());
-  });
-
-  app.get('/api/official/police-stations', (req, res) => {
-    if (!officialSourceService) {
-      res.status(503).json({ error: 'Official source integration is not initialized.' });
-      return;
-    }
-
-    const metroUnit = String(req.query.metroUnit || '').trim() || null;
-    res.json({
-      policeStations: officialSourceService.getPoliceStations({ metroUnit })
-    });
-  });
-
-  app.post('/api/official/sync', requireAdmin, async (req, res, next) => {
-    if (!officialSourceService) {
-      res.status(503).json({ error: 'Official source integration is not initialized.' });
-      return;
-    }
-
-    try {
-      const result = await officialSourceService.syncAll();
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
   });
 
   app.get('/api/debug/article', requireAdmin, async (req, res, next) => {
@@ -647,9 +613,23 @@ export function createApp({
     res.json({ ok: true, timestamp: new Date().toISOString() });
   });
 
-  app.get(/.*/, (req, res) => {
-    res.sendFile(path.join(rootDir, 'public', 'index.html'));
-  });
+  if (hasBuiltFrontend) {
+    app.use(express.static(frontendDir));
+
+    app.get('/', (req, res) => {
+      res.sendFile(frontendIndexPath);
+    });
+  } else {
+    app.get('/', (req, res) => {
+      res.json({
+        name: 'Map of Madras API',
+        ok: true,
+        frontend:
+          'Deploy the Next.js frontend from this repository to Firebase Hosting or run `npm run dev:web` locally.',
+        endpoints: ['/api/incidents', '/api/incidents/:id', '/api/meta', '/api/boundary', '/health']
+      });
+    });
+  }
 
   app.use((error, req, res, next) => {
     const message = error?.message || 'Unknown server error';

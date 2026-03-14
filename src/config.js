@@ -40,13 +40,6 @@ export const QDRANT_ARTICLE_COLLECTION =
 export const QDRANT_TAXONOMY_COLLECTION =
   process.env.QDRANT_TAXONOMY_COLLECTION || 'crime_taxonomy_v1';
 export const SEMANTIC_PROMPT_VERSION = process.env.SEMANTIC_PROMPT_VERSION || 'semantic-v1';
-export const TN_POLICE_BASE_URL =
-  process.env.TN_POLICE_BASE_URL || 'https://www.police.tn.gov.in/digigov';
-export const TN_POLICE_METRO_UNITS = (process.env.TN_POLICE_METRO_UNITS ||
-  'CHENNAI CITY,TAMBARAM CITY,AVADI CITY')
-  .split(',')
-  .map((value) => value.trim())
-  .filter(Boolean);
 
 function loadDotEnv(filePath) {
   if (!fs.existsSync(filePath)) {

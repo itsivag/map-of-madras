@@ -24,8 +24,6 @@ import {
   QDRANT_ARTICLE_COLLECTION,
   QDRANT_TAXONOMY_COLLECTION,
   SEMANTIC_PROMPT_VERSION,
-  TN_POLICE_BASE_URL,
-  TN_POLICE_METRO_UNITS,
   loadBoundaryGeoJson,
   loadLocalities,
   loadSourcesConfig
@@ -38,7 +36,6 @@ import { IngestService } from './services/ingestService.js';
 import { QdrantService } from './services/qdrantService.js';
 import { SemanticChunker } from './services/semanticChunker.js';
 import { SemanticPipeline } from './services/semanticPipeline.js';
-import { OfficialSourceService } from './services/officialSources.js';
 
 async function bootstrap() {
   const sourceConfigs = loadSourcesConfig();
@@ -68,12 +65,6 @@ async function bootstrap() {
     articleCollectionName: QDRANT_ARTICLE_COLLECTION,
     taxonomyCollectionName: QDRANT_TAXONOMY_COLLECTION
   });
-  const officialSourceService = new OfficialSourceService({
-    db,
-    userAgent: USER_AGENT,
-    tnPoliceBaseUrl: TN_POLICE_BASE_URL,
-    tnPoliceMetroUnits: TN_POLICE_METRO_UNITS
-  });
   const semanticPipeline = new SemanticPipeline({
     db,
     bedrockService,
@@ -101,7 +92,6 @@ async function bootstrap() {
     db,
     ingestService,
     geoService,
-    officialSourceService,
     rootDir: ROOT_DIR,
     corsAllowedOrigins: CORS_ALLOWED_ORIGINS,
     adminToken: ADMIN_TOKEN
@@ -117,15 +107,6 @@ async function bootstrap() {
 
   cron.schedule(INGEST_CRON, async () => {
     try {
-      const officialResult = await officialSourceService.syncAll();
-      console.log(
-        `[official:scheduler] status=${officialResult.status} sources=${officialResult.sources?.length || 0}`
-      );
-    } catch (error) {
-      console.error('[official:scheduler] failed', error.message);
-    }
-
-    try {
       const result = await ingestService.runIngestion({ trigger: 'scheduler' });
       console.log(
         `[ingest:scheduler] status=${result.status} processed=${result.processedCount || 0} published=${result.publishedCount || 0}`
@@ -134,17 +115,6 @@ async function bootstrap() {
       console.error('[ingest:scheduler] failed', error.message);
     }
   });
-
-  officialSourceService
-    .syncAll()
-    .then((result) => {
-      console.log(
-        `[official:startup] status=${result.status} sources=${result.sources?.length || 0}`
-      );
-    })
-    .catch((error) => {
-      console.error('[official:startup] failed', error.message);
-    });
 
   ingestService
     .runIngestion({ trigger: 'startup' })

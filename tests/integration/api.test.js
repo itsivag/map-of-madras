@@ -10,7 +10,6 @@ import { ROOT_DIR, loadBoundaryGeoJson } from '../../src/config.js';
 describe('API endpoints', () => {
   let db;
   let app;
-  let officialSourceService;
 
   beforeEach(() => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crime-map-api-'));
@@ -227,50 +226,10 @@ describe('API endpoints', () => {
       }
     };
 
-    officialSourceService = {
-      getMeta() {
-        return {
-          sources: [
-            {
-              id: 'tn-police-metro-stations',
-              integration_state: 'active',
-              record_count: 2
-            },
-            {
-              id: 'tn-police-view-fir',
-              integration_state: 'blocked',
-              record_count: 0
-            }
-          ],
-          metroStationCounts: [{ metro_unit_name: 'CHENNAI CITY', count: 2 }]
-        };
-      },
-      getPoliceStations() {
-        return [
-          {
-            stationOrgId: '70002266',
-            stationName: 'ADYAR',
-            metroUnitOrgId: '70002111',
-            metroUnitName: 'CHENNAI CITY',
-            sourceName: 'Tamil Nadu Police Metro Station Master',
-            sourceUrl: 'https://www.police.tn.gov.in/citizenportal/contactus',
-            syncedAt: nowIso
-          }
-        ];
-      },
-      async syncAll() {
-        return {
-          status: 'ok',
-          sources: [{ sourceId: 'tn-police-metro-stations', recordCount: 2 }]
-        };
-      }
-    };
-
     app = createApp({
       db,
       ingestService,
       geoService,
-      officialSourceService,
       rootDir: ROOT_DIR
     });
   });
@@ -318,7 +277,7 @@ describe('API endpoints', () => {
     expect(response.body.boundary.maxBounds).toHaveLength(2);
     expect(response.body.pipeline.mode).toBe('semantic');
     expect(response.body.pipeline.semanticConfigured).toBe(true);
-    expect(response.body.officialSources.sources).toHaveLength(2);
+    expect(response.body.officialSources).toBeUndefined();
   });
 
   it('returns semantic debug output for a provided article URL', async () => {
@@ -367,7 +326,6 @@ describe('API endpoints', () => {
         },
         boundaryGeoJson: loadBoundaryGeoJson()
       },
-      officialSourceService,
       rootDir: ROOT_DIR
     });
 
@@ -379,21 +337,6 @@ describe('API endpoints', () => {
     expect(response.body.stage).toBe('error');
     expect(response.body.decision).toBe('error');
     expect(response.body.error).toContain('MiniMax response');
-  });
-
-  it('returns official source metadata and metro police stations', async () => {
-    const [metaResponse, stationsResponse] = await Promise.all([
-      request(app).get('/api/official/meta'),
-      request(app).get('/api/official/police-stations?metroUnit=chennai city')
-    ]);
-
-    expect(metaResponse.status).toBe(200);
-    expect(metaResponse.body.sources).toHaveLength(2);
-    expect(metaResponse.body.metroStationCounts[0].metro_unit_name).toBe('CHENNAI CITY');
-
-    expect(stationsResponse.status).toBe(200);
-    expect(stationsResponse.body.policeStations).toHaveLength(1);
-    expect(stationsResponse.body.policeStations[0].stationName).toBe('ADYAR');
   });
 
   it('applies CORS headers and protects admin routes when a token is configured', async () => {
@@ -424,7 +367,6 @@ describe('API endpoints', () => {
         },
         boundaryGeoJson: loadBoundaryGeoJson()
       },
-      officialSourceService,
       rootDir: ROOT_DIR,
       corsAllowedOrigins: 'https://itsivag.github.io',
       adminToken: 'secret-token'

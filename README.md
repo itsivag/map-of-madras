@@ -62,7 +62,8 @@ Minimum practical backend config:
 ```env
 PORT=3000
 PIPELINE_MODE=semantic
-FIRECRAWL_API_KEY=your_firecrawl_key
+BROWSERLESS_API_KEY=your_browserless_token
+BROWSERLESS_BASE_URL=https://production-sfo.browserless.io
 AWS_BEARER_TOKEN_BEDROCK=your_bedrock_key
 AWS_REGION=us-east-1
 QDRANT_URL=http://localhost:6333
@@ -123,18 +124,44 @@ FRONTEND_API_BASE_URL=https://backend-production-a0f6.up.railway.app npm run dep
 
 ## GitHub Actions deployment
 
-The repo includes [`.github/workflows/deploy-firebase-hosting.yml`](/Users/itsivag/AntigravityProjects/chennai-gbu-map/.github/workflows/deploy-firebase-hosting.yml). Configure these repository settings before using it:
+The repo includes both deployment workflows:
 
-- Repository variable: `FIREBASE_PROJECT_ID`
-  Current value: `chennai-gbu-map`
-- Repository variable: `FRONTEND_API_BASE_URL`
-  Current value: `https://backend-production-a0f6.up.railway.app`
-- Repository secret: `FIREBASE_SERVICE_ACCOUNT`
+- frontend: [`.github/workflows/deploy-firebase-hosting.yml`](/Users/itsivag/AntigravityProjects/chennai-gbu-map/.github/workflows/deploy-firebase-hosting.yml)
+- backend: [`.github/workflows/deploy-backend-railway.yml`](/Users/itsivag/AntigravityProjects/chennai-gbu-map/.github/workflows/deploy-backend-railway.yml)
+
+Configure these repository settings before using them:
+
+- Repository secret: `SECRETS_ENV`
+  Paste the full backend/frontend `.env` file content here as a multiline secret.
+
+`SECRETS_ENV` should include everything needed by the workflows, including:
+
+```env
+FRONTEND_API_BASE_URL=https://backend-production-a0f6.up.railway.app
+FIREBASE_PROJECT_ID=chennai-gbu-map
+FIREBASE_TOKEN=your-firebase-cli-token
+RAILWAY_PROJECT_ID=your-railway-project-id
+RAILWAY_ENVIRONMENT=production
+RAILWAY_SERVICE=backend
+RAILWAY_TOKEN=your-railway-token
+BROWSERLESS_API_KEY=your-browserless-token
+BROWSERLESS_BASE_URL=https://production-sfo.browserless.io
+AWS_BEARER_TOKEN_BEDROCK=your-bedrock-token
+AWS_REGION=us-east-1
+QDRANT_URL=http://localhost:6333
+```
+
+Generate `FIREBASE_TOKEN` locally with:
+
+```bash
+firebase login:ci
+```
 
 ## Important limitations
 
 - This app maps incidents from reported news coverage, not authoritative crime records.
-- Firecrawl credits are required for live article extraction, and ingestion will stall when that quota is exhausted.
+- Browserless usage is only needed when direct HTML fetches do not expose enough article content.
+- Browserless free-tier quotas can still be exhausted on heavier ingestion runs.
 - Geocoding can still be approximate when articles only mention broad locations.
 - Source quality and publisher behavior can affect extraction quality.
 
@@ -146,7 +173,7 @@ The repo includes [`.github/workflows/deploy-firebase-hosting.yml`](/Users/itsiv
 - Node.js
 - Express
 - SQLite
-- Firecrawl
+- Browserless
 - Amazon Bedrock
 - MiniMax
 - Titan Embeddings

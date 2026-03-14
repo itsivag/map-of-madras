@@ -10,21 +10,24 @@ const __dirname = path.dirname(__filename);
 describe('rss service', () => {
   it('parses RSS fixture and enriches article body', async () => {
     const xml = fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'sampleFeed.xml'), 'utf8');
-    const firecrawlClient = {
-      scrape: vi.fn(async () => ({
-        markdown: 'Detailed robbery report from local police.',
-        html: '<html><body><article><p>Detailed robbery report from local police.</p></article></body></html>',
-        metadata: {
-          title: 'Robbery article',
-          publishedTime: '2026-03-07T09:00:00.000Z'
-        }
-      }))
+    const browserlessClient = {
+      getContent: vi.fn(async () => `
+        <html>
+          <head>
+            <title>Robbery article</title>
+            <meta property="article:published_time" content="2026-03-07T09:00:00.000Z" />
+          </head>
+          <body>
+            <article><p>Detailed robbery report from local police.</p></article>
+          </body>
+        </html>
+      `)
     };
 
     const rss = createRssService({
       userAgent: 'test-agent',
       maxItemsPerFeed: 10,
-      firecrawlClient
+      browserlessClient
     });
 
     const items = await rss.parseFeedFromString(xml);
@@ -33,7 +36,7 @@ describe('rss service', () => {
 
     const enriched = await rss.enrichItem({ id: 'source-1', name: 'Fixture Feed' }, items[0]);
     expect(enriched.content).toContain('Detailed robbery report');
-    expect(firecrawlClient.scrape).toHaveBeenCalledTimes(1);
+    expect(browserlessClient.getContent).toHaveBeenCalledTimes(1);
   });
 
   it('scrapes HTML index pages using source-configured link patterns', async () => {
@@ -122,10 +125,8 @@ describe('rss service', () => {
   });
 
   it('prefers JSON-LD articleBody over fallback body paragraphs', async () => {
-    const firecrawlClient = {
-      scrape: vi.fn(async () => ({
-        markdown: '',
-        html: `
+    const browserlessClient = {
+      getContent: vi.fn(async () => `
           <html>
             <head>
               <meta property="og:title" content="Mob kills van driver in Chennai" />
@@ -142,17 +143,13 @@ describe('rss service', () => {
               </div>
             </body>
           </html>
-        `,
-        metadata: {
-          title: 'Mob kills van driver in Chennai'
-        }
-      }))
+        `)
     };
 
     const rss = createRssService({
       userAgent: 'test-agent',
       maxItemsPerFeed: 10,
-      firecrawlClient
+      browserlessClient
     });
 
     const article = await rss.fetchStandaloneArticle('https://example.org/toi-like-story');
@@ -162,45 +159,39 @@ describe('rss service', () => {
     expect(article.content).not.toContain('Author biography');
   });
 
-  it('distills article text from Firecrawl markdown generically when html content is noisy', async () => {
-    const firecrawlClient = {
-      scrape: vi.fn(async () => ({
-        markdown: `
-Edition
-
-Trending
-
-Mob kills van driver after his urine spills on woman in Chennai
-
-CHENNAI: A mob beat a 30-year-old van driver to death after a fight erupted when the driver urinated in a public place on Prakasam Salai in Broadway.
-
-Police said the victim, Kalaiselvan, was taken to Govt Stanley Hospital where doctors declared him dead on arrival.
-
-About the Author
-
-Selvaraj Arunachalam is a veteran journalist with over 31 years of experience.
-        `,
-        html: `
-          <html>
-            <body>
+  it('falls back to Browserless when direct fetch does not return substantial article content', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response('<html><body><p>Sign in</p><p>Trending</p></body></html>', {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' }
+        })
+      );
+    const browserlessClient = {
+      getContent: vi.fn(async () => `
+        <html>
+          <head>
+            <title>Mob kills van driver after his urine spills on woman in Chennai</title>
+          </head>
+          <body>
+            <main>
+              <p>CHENNAI: A mob beat a 30-year-old van driver to death after a fight erupted when the driver urinated in a public place on Prakasam Salai in Broadway.</p>
+              <p>Police said the victim, Kalaiselvan, was taken to Govt Stanley Hospital where doctors declared him dead on arrival.</p>
               <div id="author_desc">
                 <p>Selvaraj Arunachalam is a veteran journalist with over 31 years of experience.</p>
               </div>
-            </body>
-          </html>
-        `,
-        metadata: {
-          title: 'Mob kills van driver after his urine spills on woman in Chennai',
-          description:
-            'CHENNAI: A mob beat a 30-year-old van driver to death after a fight erupted when the driver urinated in a public place on Prakasam Salai in Broadway.'
-        }
-      }))
+            </main>
+          </body>
+        </html>
+      `)
     };
 
     const rss = createRssService({
+      fetchImpl: fetchMock,
       userAgent: 'test-agent',
       maxItemsPerFeed: 10,
-      firecrawlClient
+      browserlessClient
     });
 
     const article = await rss.fetchStandaloneArticle('https://example.org/news-story');
@@ -208,5 +199,6 @@ Selvaraj Arunachalam is a veteran journalist with over 31 years of experience.
     expect(article.content).toContain('Prakasam Salai in Broadway');
     expect(article.content).toContain('Govt Stanley Hospital');
     expect(article.content).not.toContain('31 years of experience');
+    expect(browserlessClient.getContent).toHaveBeenCalledTimes(1);
   });
 });

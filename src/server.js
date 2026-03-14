@@ -14,7 +14,8 @@ import {
   SEMANTIC_PUBLISH_THRESHOLD,
   CORS_ALLOWED_ORIGINS,
   ADMIN_TOKEN,
-  FIRECRAWL_API_KEY,
+  BROWSERLESS_API_KEY,
+  BROWSERLESS_BASE_URL,
   USER_AGENT,
   AWS_REGION,
   BEDROCK_TITAN_EMBED_MODEL_ID,
@@ -50,7 +51,8 @@ async function bootstrap() {
   });
   const rssService = createRssService({
     userAgent: USER_AGENT,
-    firecrawlApiKey: FIRECRAWL_API_KEY,
+    browserlessApiKey: BROWSERLESS_API_KEY,
+    browserlessBaseUrl: BROWSERLESS_BASE_URL,
     maxItemsPerFeed: RSS_MAX_ITEMS_PER_FEED
   });
   const bedrockService = new BedrockSemanticService({

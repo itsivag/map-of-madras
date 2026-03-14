@@ -1,4 +1,4 @@
-name: Deploy Frontend To Firebase Hosting
+name: Deploy Backend To Railway
 
 on:
   push:
@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   deploy:
@@ -39,8 +38,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build static frontend
-        run: npm run build:hosting
+      - name: Run tests
+        run: npm test
 
-      - name: Deploy to Firebase Hosting
-        run: npx firebase-tools deploy --only hosting --project "$FIREBASE_PROJECT_ID" --token "$FIREBASE_TOKEN"
+      - name: Deploy to Railway
+        uses: railwayapp/railway-deploy@v3
+        with:
+          railway_token: ${{ env.RAILWAY_TOKEN }}
+          service: ${{ env.RAILWAY_SERVICE }}
+          environment: ${{ env.RAILWAY_ENVIRONMENT }}
+          project: ${{ env.RAILWAY_PROJECT_ID }}
+          detach: true

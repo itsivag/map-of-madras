@@ -1,6 +1,5 @@
 import Parser from 'rss-parser';
 import * as cheerio from 'cheerio';
-import FirecrawlApp from '@mendable/firecrawl-js';
 
 function stripHtml(html = '') {
   if (!html) {
@@ -32,16 +31,6 @@ function parseJsonArray(value) {
   } catch {
     return [];
   }
-}
-
-function markdownToText(value = '') {
-  return compactText(
-    value
-      .replace(/```[\s\S]*?```/g, ' ')
-      .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '$1 ')
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ')
-      .replace(/[#>*_`~|-]+/g, ' ')
-  );
 }
 
 function normalizeForMatch(value = '') {
@@ -121,47 +110,63 @@ function scoreArticleTextCandidate(text, { title = '', description = '' } = {}) 
   return keywordHits * 3 + sentenceCount + descriptionBoost + lengthScore - linkPenalty - boilerplatePenalty;
 }
 
-function distillArticleTextFromMarkdown(markdown = '', metadata = {}) {
-  const blocks = markdown
-    .split(/\n{2,}/)
-    .map((block) => markdownToText(block))
-    .filter((block) => block.length >= 60);
+function hasSubstantialArticleContent(content = '') {
+  return compactText(content).length >= 280;
+}
 
-  if (blocks.length === 0) {
-    return '';
+function buildBrowserlessContentUrl(baseUrl, apiKey) {
+  const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+  const contentUrl = normalizedBaseUrl.endsWith('/content')
+    ? new URL(normalizedBaseUrl)
+    : new URL(`${normalizedBaseUrl}/content`);
+
+  if (apiKey) {
+    contentUrl.searchParams.set('token', apiKey);
   }
 
-  const blockScores = blocks.map((block) => scoreArticleTextCandidate(block, metadata));
-  let bestIndex = 0;
-  let bestScore = Number.NEGATIVE_INFINITY;
+  return contentUrl.toString();
+}
 
-  for (let index = 0; index < blockScores.length; index += 1) {
-    if (blockScores[index] > bestScore) {
-      bestScore = blockScores[index];
-      bestIndex = index;
+function createBrowserlessClient({
+  fetchImpl,
+  baseUrl,
+  apiKey,
+  userAgent
+}) {
+  const contentUrl = buildBrowserlessContentUrl(baseUrl, apiKey);
+
+  return {
+    async getContent(url, { timeoutMs }) {
+      const response = await fetchImpl(contentUrl, {
+        method: 'POST',
+        headers: {
+          Accept: 'text/html,application/xhtml+xml',
+          'Cache-Control': 'no-cache',
+          'Content-Type': 'application/json',
+          'User-Agent': userAgent
+        },
+        body: JSON.stringify({
+          url,
+          bestAttempt: true,
+          blockAds: true,
+          gotoOptions: {
+            timeout: timeoutMs,
+            waitUntil: 'domcontentloaded'
+          },
+          rejectResourceTypes: ['font', 'image', 'media']
+        })
+      });
+
+      if (!response.ok) {
+        const errorBody = compactText(await response.text());
+        throw new Error(
+          `Browserless content request failed: ${response.status}${errorBody ? ` ${errorBody.slice(0, 240)}` : ''}`
+        );
+      }
+
+      return response.text();
     }
-  }
-
-  const selected = [];
-  let totalLength = 0;
-
-  for (let index = bestIndex; index < blocks.length; index += 1) {
-    const block = blocks[index];
-    const score = blockScores[index];
-
-    if (index > bestIndex && score <= 0) {
-      break;
-    }
-
-    selected.push(block);
-    totalLength += block.length;
-
-    if (totalLength >= 5000 || selected.length >= 6) {
-      break;
-    }
-  }
-
-  return compactText(selected.join(' '));
+  };
 }
 
 function parseJsonLdBlocks($) {
@@ -239,8 +244,9 @@ export function createRssService({
   userAgent,
   maxItemsPerFeed = 25,
   articleFetchTimeoutMs = 15000,
-  firecrawlApiKey = '',
-  firecrawlClient = null
+  browserlessApiKey = '',
+  browserlessBaseUrl = 'https://production-sfo.browserless.io',
+  browserlessClient = null
 }) {
   const parser = new Parser({
     timeout: 15000,
@@ -248,7 +254,16 @@ export function createRssService({
       item: ['content:encoded']
     }
   });
-  const firecrawl = firecrawlClient || (firecrawlApiKey ? new FirecrawlApp({ apiKey: firecrawlApiKey }) : null);
+  const browserless =
+    browserlessClient ||
+    (browserlessApiKey
+      ? createBrowserlessClient({
+          fetchImpl,
+          baseUrl: browserlessBaseUrl,
+          apiKey: browserlessApiKey,
+          userAgent
+        })
+      : null);
 
   function normalizeFeedItems(rawItems) {
     const items = Array.isArray(rawItems) ? rawItems : [];
@@ -429,7 +444,28 @@ export function createRssService({
     const title = compactText(
       $('meta[property="og:title"]').attr('content') || $('title').text() || $('h1').first().text() || ''
     );
-    $('script, style, noscript, iframe, header, footer').remove();
+    $(
+      [
+        'script',
+        'style',
+        'noscript',
+        'iframe',
+        'header',
+        'footer',
+        'nav',
+        'aside',
+        'form',
+        '#author_desc',
+        '#related_stories',
+        '.author',
+        '.authorBio',
+        '.author-bio',
+        '.newsletter',
+        '.advertisement',
+        '.ad',
+        '.breadcrumbs'
+      ].join(', ')
+    ).remove();
 
     let text = jsonLdArticleBody;
 
@@ -441,7 +477,7 @@ export function createRssService({
       if (articleParagraphs.length > 0) {
         text = articleParagraphs.join(' ');
       } else {
-        const bodyParagraphs = $('body p')
+        const bodyParagraphs = $('main p, [role="main"] p, .article p, .story p, .content p, body p')
           .slice(0, 40)
           .map((_, el) => $(el).text())
           .get();
@@ -456,6 +492,28 @@ export function createRssService({
     };
   }
 
+  async function fetchArticleHtmlDirect(url) {
+    const timeout = withTimeout(articleFetchTimeoutMs);
+
+    try {
+      const response = await fetchImpl(url, {
+        headers: {
+          'User-Agent': userAgent,
+          Accept: 'text/html,application/xhtml+xml'
+        },
+        signal: timeout.signal
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch article page: ${response.status}`);
+      }
+
+      return response.text();
+    } finally {
+      timeout.clear();
+    }
+  }
+
   async function fetchArticlePageData(url) {
     if (!url) {
       return {
@@ -465,43 +523,63 @@ export function createRssService({
       };
     }
 
-    if (!firecrawl) {
-      throw new Error('Firecrawl is not configured. Set FIRECRAWL_API_KEY.');
+    if (browserlessClient) {
+      const html = await withPromiseTimeout(
+        browserless.getContent(url, { timeoutMs: articleFetchTimeoutMs }),
+        articleFetchTimeoutMs + 1000,
+        `Browserless content for ${url}`
+      );
+      return parseArticlePageDataFromHtml(html);
     }
 
-    const document = await withPromiseTimeout(
-      firecrawl.scrape(url, {
-        formats: ['markdown', 'html'],
-        onlyMainContent: true,
-        timeout: articleFetchTimeoutMs
-      }),
-      articleFetchTimeoutMs + 1000,
-      `Firecrawl scrape for ${url}`
-    );
-
-    const parsedHtml = parseArticlePageDataFromHtml(document?.html || '');
-    const metadata = {
-      title: document?.metadata?.title || document?.metadata?.ogTitle || parsedHtml.title || '',
-      description: document?.metadata?.description || document?.metadata?.ogDescription || ''
+    let directPageData = {
+      content: '',
+      publishedAt: null,
+      title: null
     };
-    const distilledMarkdown = distillArticleTextFromMarkdown(document?.markdown || '', metadata);
-    const contentCandidates = [parsedHtml.content, distilledMarkdown, markdownToText(document?.markdown || '')]
+    let directFetchError = null;
+
+    try {
+      const html = await withPromiseTimeout(
+        fetchArticleHtmlDirect(url),
+        articleFetchTimeoutMs + 1000,
+        `Direct article fetch for ${url}`
+      );
+      directPageData = parseArticlePageDataFromHtml(html);
+    } catch (error) {
+      directFetchError = error;
+    }
+
+    if (hasSubstantialArticleContent(directPageData.content) || !browserless) {
+      if (!directPageData.content && directFetchError && !browserless) {
+        throw directFetchError;
+      }
+
+      return directPageData;
+    }
+
+    const browserlessHtml = await withPromiseTimeout(
+      browserless.getContent(url, { timeoutMs: articleFetchTimeoutMs }),
+      articleFetchTimeoutMs + 1000,
+      `Browserless content for ${url}`
+    );
+    const browserlessPageData = parseArticlePageDataFromHtml(browserlessHtml);
+
+    const metadata = {
+      title: browserlessPageData.title || directPageData.title || '',
+      description: ''
+    };
+    const contentCandidates = [directPageData.content, browserlessPageData.content]
       .filter(Boolean)
       .sort(
         (left, right) =>
           scoreArticleTextCandidate(right, metadata) - scoreArticleTextCandidate(left, metadata)
       );
-    const content = contentCandidates[0] || '';
 
     return {
-      content,
-      publishedAt:
-        document?.metadata?.publishedTime ||
-        document?.metadata?.modifiedTime ||
-        parsedHtml.publishedAt,
-      title:
-        compactText(document?.metadata?.title || document?.metadata?.ogTitle || '') ||
-        parsedHtml.title
+      content: contentCandidates[0] || '',
+      publishedAt: browserlessPageData.publishedAt || directPageData.publishedAt,
+      title: browserlessPageData.title || directPageData.title
     };
   }
 

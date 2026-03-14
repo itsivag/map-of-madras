@@ -143,6 +143,8 @@ export function CrimeMap() {
   const mapRef = useRef(null);
   const leafletRef = useRef(null);
   const markerLayerRef = useRef(null);
+  const markerByIncidentIdRef = useRef(new Map());
+  const listPanelRef = useRef(null);
   const maxBoundsRef = useRef(null);
   const baseZoomRef = useRef(10);
   const pinnedMarkerRef = useRef(null);
@@ -155,6 +157,8 @@ export function CrimeMap() {
   const [statusText, setStatusText] = useState('Loading recent incidents');
   const [lastUpdatedText, setLastUpdatedText] = useState('Checking latest ingest');
   const [disclaimerText, setDisclaimerText] = useState(DEFAULT_META.disclaimer);
+  const [incidentList, setIncidentList] = useState([]);
+  const [activeIncidentId, setActiveIncidentId] = useState(null);
 
   function clearPinnedMarker() {
     if (!pinnedMarkerRef.current) {
@@ -192,6 +196,7 @@ export function CrimeMap() {
     }
 
     markerLayer.clearLayers();
+    markerByIncidentIdRef.current = new Map();
     pinnedMarkerRef.current = null;
 
     for (const incident of incidents) {
@@ -244,6 +249,7 @@ export function CrimeMap() {
         }
 
         pinnedMarkerRef.current = marker;
+        setActiveIncidentId(incident.id);
         marker.openPopup();
       });
 
@@ -253,10 +259,56 @@ export function CrimeMap() {
         }
       });
 
+      markerByIncidentIdRef.current.set(incident.id, marker);
       markerLayer.addLayer(marker);
     }
 
     incidentsRef.current = incidents;
+    setIncidentList(incidents);
+    setActiveIncidentId((current) =>
+      incidents.some((incident) => incident.id === current) ? current : incidents[0]?.id ?? null
+    );
+  }
+
+  function focusIncidentById(incidentId) {
+    const map = mapRef.current;
+    const marker = markerByIncidentIdRef.current.get(incidentId);
+
+    if (!map || !marker) {
+      return;
+    }
+
+    const markerLatLng = marker.getLatLng();
+    const currentZoom = map.getZoom();
+    const point = map.project(markerLatLng, currentZoom);
+    const panelWidth = listPanelRef.current?.clientWidth || 0;
+    const targetCenter = map.unproject([point.x + panelWidth * 0.4, point.y], currentZoom);
+    const nextZoom = Math.max(currentZoom, Math.min(Math.max(baseZoomRef.current + 1, 12), 14));
+
+    if (pinnedMarkerRef.current && pinnedMarkerRef.current !== marker) {
+      pinnedMarkerRef.current.closePopup();
+    }
+
+    pinnedMarkerRef.current = marker;
+    setActiveIncidentId(incidentId);
+    map.setView(targetCenter, nextZoom, { animate: true });
+    marker.openPopup();
+  }
+
+  function formatIncidentDate(incident) {
+    const timestamp = incident.occurredAt || incident.publishedAt;
+    if (!timestamp) {
+      return 'Unknown date';
+    }
+
+    return new Intl.DateTimeFormat('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'Asia/Kolkata'
+    }).format(new Date(timestamp));
   }
 
   function applyChennaiBounds(meta) {
@@ -547,6 +599,40 @@ export function CrimeMap() {
         <div className="status-pill">{statusText}</div>
         <div className="time-widget__updated">Last updated: {lastUpdatedText}</div>
       </section>
+      <aside className="incident-rail" aria-label="Incident list" ref={listPanelRef}>
+        <div className="incident-rail__header">
+          <strong>Incidents</strong>
+          <span>{incidentList.length}</span>
+        </div>
+        <div className="incident-rail__list">
+          {incidentList.length ? (
+            incidentList.map((incident) => (
+              <button
+                key={incident.id}
+                type="button"
+                className={`incident-rail__item${activeIncidentId === incident.id ? ' is-active' : ''}`}
+                onClick={() => focusIncidentById(incident.id)}
+              >
+                <span
+                  className="incident-rail__dot"
+                  style={{ backgroundColor: CATEGORY_COLORS[incident.category] || CATEGORY_COLORS.other }}
+                  aria-hidden="true"
+                />
+                <span className="incident-rail__body">
+                  <span className="incident-rail__title">
+                    {incident.locality || incident.title || 'Unknown locality'}
+                  </span>
+                  <span className="incident-rail__meta">
+                    {incident.category || 'other'} · {formatIncidentDate(incident)}
+                  </span>
+                </span>
+              </button>
+            ))
+          ) : (
+            <div className="incident-rail__empty">No incidents for this time range.</div>
+          )}
+        </div>
+      </aside>
       <div className="map-disclaimer">{disclaimerText}</div>
     </section>
   );

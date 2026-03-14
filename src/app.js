@@ -368,6 +368,7 @@ function buildIncidentsQuery(query) {
       confidence,
       source_name,
       source_url,
+      title,
       published_at,
       summary
     FROM incidents
@@ -471,6 +472,7 @@ export function createApp({
 
     const incidents = rows.map((row) => {
       const sources = sourcesByIncident.get(row.id) || [];
+      const sourceTitle = sources.find((source) => source.title)?.title || null;
 
       return {
         id: row.id,
@@ -483,6 +485,7 @@ export function createApp({
         confidence: row.confidence,
         sourceName: row.source_name,
         sourceUrl: row.source_url,
+        title: row.title || sourceTitle,
         publishedAt: row.published_at,
         summary: row.summary,
         sourceCount: sources.length || (row.source_url ? 1 : 0),
@@ -494,7 +497,7 @@ export function createApp({
                   sourceName: row.source_name,
                   sourceUrl: row.source_url,
                   sourceDomain: null,
-                  title: null,
+                  title: row.title || null,
                   publishedAt: row.published_at
                 }
               ]

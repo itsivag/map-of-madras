@@ -138,6 +138,14 @@ function formatLastUpdated(lastRun) {
   }).format(new Date(timestamp));
 }
 
+function getIncidentHeadline(incident) {
+  return (
+    incident.title ||
+    (Array.isArray(incident.sources) ? incident.sources.find((source) => source?.title)?.title : null) ||
+    'Untitled incident'
+  );
+}
+
 export function CrimeMap() {
   const mapNodeRef = useRef(null);
   const mapRef = useRef(null);
@@ -633,9 +641,9 @@ export function CrimeMap() {
                     aria-hidden="true"
                   />
                   <span className="incident-rail__body">
-                    <span className="incident-rail__title">
-                      {incident.title || 'Untitled incident'}
-                    </span>
+                  <span className="incident-rail__title">
+                    {getIncidentHeadline(incident)}
+                  </span>
                     <span className="incident-rail__meta">
                       {(incident.locality || 'Unknown locality') +
                         ' · ' +

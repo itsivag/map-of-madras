@@ -582,7 +582,23 @@ export function createRssService({
   }
 
   async function enrichItem(source, item) {
-    const pageData = await fetchArticlePageData(item.link);
+    let pageData = {
+      content: '',
+      publishedAt: null,
+      title: null
+    };
+    let pageFetchError = null;
+
+    try {
+      pageData = await fetchArticlePageData(item.link);
+    } catch (error) {
+      pageFetchError = error;
+    }
+
+    const fallbackContent = compactText([item.feedSummary, item.feedContent].filter(Boolean).join(' '));
+    if (!pageData.content && pageFetchError && !fallbackContent) {
+      throw pageFetchError;
+    }
 
     return {
       sourceId: source.id,
@@ -590,7 +606,7 @@ export function createRssService({
       sourceUrl: item.link,
       title: compactText(item.title || pageData.title || ''),
       publishedAt: item.publishedAt || pageData.publishedAt || new Date().toISOString(),
-      content: compactText([item.feedSummary, item.feedContent, pageData.content].filter(Boolean).join(' '))
+      content: compactText([fallbackContent, pageData.content].filter(Boolean).join(' '))
     };
   }
 

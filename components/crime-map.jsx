@@ -611,11 +611,12 @@ export function CrimeMap() {
                 type="button"
                 className={`incident-rail__chip${selectedCategory === chip.id ? ' is-active' : ''}`}
                 onClick={() => setSelectedCategory(chip.id)}
-              >
-                <span>{chip.label}</span>
-                <span>{chip.count}</span>
-              </button>
-            ))}
+            >
+              {chip.id !== 'all' ? <span>{CATEGORY_EMOJIS[chip.id] || CATEGORY_EMOJIS.other}</span> : null}
+              <span>{chip.label}</span>
+              <span>{chip.count}</span>
+            </button>
+          ))}
           </div>
           <div className="incident-rail__list">
             {filteredIncidents.length ? (

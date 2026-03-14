@@ -42,10 +42,11 @@ jobs:
         run: npm test
 
       - name: Deploy to Railway
-        uses: railwayapp/railway-deploy@v3
-        with:
-          railway_token: ${{ env.RAILWAY_TOKEN }}
-          service: ${{ env.RAILWAY_SERVICE }}
-          environment: ${{ env.RAILWAY_ENVIRONMENT }}
-          project: ${{ env.RAILWAY_PROJECT_ID }}
-          detach: true
+        env:
+          NPM_CONFIG_CACHE: ${{ github.workspace }}/.npm-cache
+          RAILWAY_TOKEN: ${{ env.RAILWAY_TOKEN }}
+        run: >
+          npx -y @railway/cli up --ci --detach
+          --service "$RAILWAY_SERVICE"
+          --environment "$RAILWAY_ENVIRONMENT"
+          --project "$RAILWAY_PROJECT_ID"

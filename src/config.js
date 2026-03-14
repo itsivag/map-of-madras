@@ -14,7 +14,13 @@ export const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'crime_map.sql
 export const PORT = Number(process.env.PORT || 3000);
 export const INGEST_CRON = process.env.INGEST_CRON || '0 * * * *';
 export const RSS_MAX_ITEMS_PER_FEED = Number(process.env.RSS_MAX_ITEMS_PER_FEED || 8);
-export const INGEST_MAX_ITEMS_PER_SOURCE = Number(process.env.INGEST_MAX_ITEMS_PER_SOURCE || 3);
+export const INGEST_MAX_ITEMS_PER_SOURCE = Number(process.env.INGEST_MAX_ITEMS_PER_SOURCE || 4);
+export const MANUAL_INGEST_LOOKBACK_HOURS = Number(
+  process.env.MANUAL_INGEST_LOOKBACK_HOURS || 4
+);
+export const INGEST_WINDOW_OVERLAP_MINUTES = Number(
+  process.env.INGEST_WINDOW_OVERLAP_MINUTES || 30
+);
 export const INGEST_SOURCE_TIME_BUDGET_MS = Number(
   process.env.INGEST_SOURCE_TIME_BUDGET_MS || 30000
 );

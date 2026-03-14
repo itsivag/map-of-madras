@@ -128,7 +128,7 @@ describe('ingestion pipeline', () => {
     db.close();
   });
 
-  it('filters feed items to the current cron window before processing', async () => {
+  it('filters scheduler runs to the current cron window with overlap before processing', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-03-13T09:30:00.000Z'));
 
@@ -152,21 +152,21 @@ describe('ingestion pipeline', () => {
           {
             title: 'Old incident',
             link: 'https://example.org/old-story',
-            publishedAt: '2026-03-13T08:55:00.000Z',
+            publishedAt: '2026-03-13T08:25:00.000Z',
             feedSummary: '',
             feedContent: ''
           },
           {
-            title: 'Current incident 1',
-            link: 'https://example.org/current-story-1',
+            title: 'Overlap incident',
+            link: 'https://example.org/overlap-story',
+            publishedAt: '2026-03-13T08:35:00.000Z',
+            feedSummary: '',
+            feedContent: ''
+          },
+          {
+            title: 'Current incident',
+            link: 'https://example.org/current-story',
             publishedAt: '2026-03-13T09:05:00.000Z',
-            feedSummary: '',
-            feedContent: ''
-          },
-          {
-            title: 'Current incident 2',
-            link: 'https://example.org/current-story-2',
-            publishedAt: '2026-03-13T09:20:00.000Z',
             feedSummary: '',
             feedContent: ''
           }
@@ -189,7 +189,7 @@ describe('ingestion pipeline', () => {
         return true;
       },
       async analyzeArticle({ article }) {
-        const index = article.title.endsWith('2') ? 2 : 1;
+        const index = article.title.includes('Overlap') ? 1 : 2;
         return {
           stage: 'ready_to_publish',
           decision: 'publish',
@@ -232,19 +232,148 @@ describe('ingestion pipeline', () => {
         pipelineMode: 'semantic',
         publishThreshold: 0.8,
         ingestCron: '0 * * * *',
+        ingestionWindowOverlapMinutes: 30,
         maxItemsPerSource: 5
       });
 
-      const result = await ingestService.runIngestion({ trigger: 'manual' });
+      const result = await ingestService.runIngestion({ trigger: 'scheduler' });
       const run = db.prepare('SELECT * FROM ingestion_runs ORDER BY id DESC LIMIT 1').get();
       const details = JSON.parse(run.details_json);
       const rawCount = db.prepare('SELECT COUNT(*) AS count FROM articles_raw').get().count;
 
       expect(result.processedCount).toBe(2);
       expect(result.publishedCount).toBe(2);
-      expect(details.ingestionWindow.from).toBe('2026-03-13T09:00:00.000Z');
+      expect(details.ingestionWindow.from).toBe('2026-03-13T08:30:00.000Z');
+      expect(details.ingestionWindow.mode).toBe('scheduled_cron');
+      expect(details.ingestionWindow.overlapMinutes).toBe(30);
       expect(details.sources[0].windowSkippedCount).toBe(1);
       expect(rawCount).toBe(2);
+    } finally {
+      db.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives manual runs a wider recent lookback window', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-13T09:30:00.000Z'));
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crime-map-manual-window-test-'));
+    const dbPath = path.join(tempDir, 'manual-window.sqlite');
+
+    const db = initDatabase(dbPath, [
+      {
+        id: 'fixture-source',
+        name: 'Fixture Source',
+        feedUrl: 'https://example.org/feed.xml',
+        websiteUrl: 'https://example.org',
+        enabled: true,
+        parserMode: 'rss'
+      }
+    ]);
+
+    const rssService = {
+      async fetchFeedItems() {
+        return [
+          {
+            title: 'Too old incident',
+            link: 'https://example.org/too-old-story',
+            publishedAt: '2026-03-13T04:55:00.000Z',
+            feedSummary: '',
+            feedContent: ''
+          },
+          {
+            title: 'Manual lookback incident',
+            link: 'https://example.org/manual-lookback-story',
+            publishedAt: '2026-03-13T05:10:00.000Z',
+            feedSummary: '',
+            feedContent: ''
+          },
+          {
+            title: 'Manual current incident',
+            link: 'https://example.org/manual-current-story',
+            publishedAt: '2026-03-13T09:15:00.000Z',
+            feedSummary: '',
+            feedContent: ''
+          }
+        ];
+      },
+      async enrichItem(source, item) {
+        return {
+          sourceId: source.id,
+          sourceName: source.name,
+          sourceUrl: item.link,
+          title: item.title,
+          publishedAt: item.publishedAt,
+          content: item.title
+        };
+      }
+    };
+
+    const semanticPipeline = {
+      isConfigured() {
+        return true;
+      },
+      async analyzeArticle({ article }) {
+        const index = article.title.includes('lookback') ? 1 : 2;
+        return {
+          stage: 'ready_to_publish',
+          decision: 'publish',
+          extraction: {
+            category: 'fraud/scam'
+          },
+          incidentCandidate: {
+            dedupe: buildDedupeKey({
+              title: article.title,
+              category: 'fraud/scam',
+              subcategory: 'manual-window-test',
+              occurredAt: article.publishedAt,
+              locality: `Chennai ${index}`,
+              lat: 13.18 + index * 0.05,
+              lng: 80.17 + index * 0.05
+            }),
+            category: 'fraud/scam',
+            subcategory: 'manual-window-test',
+            occurredAt: article.publishedAt,
+            locality: `Chennai ${index}`,
+            lat: 13.18 + index * 0.05,
+            lng: 80.17 + index * 0.05,
+            confidence: 0.95,
+            sourceName: 'Fixture Source',
+            sourceUrl: article.sourceUrl,
+            sourceDomain: 'example.org',
+            title: article.title,
+            summary: 'Manual window test incident.',
+            publishedAt: new Date().toISOString()
+          }
+        };
+      }
+    };
+
+    try {
+      const ingestService = new IngestService({
+        db,
+        rssService,
+        semanticPipeline,
+        pipelineMode: 'semantic',
+        publishThreshold: 0.8,
+        ingestCron: '0 * * * *',
+        manualLookbackHours: 4,
+        ingestionWindowOverlapMinutes: 30,
+        maxItemsPerSource: 5
+      });
+
+      const result = await ingestService.runIngestion({ trigger: 'manual' });
+      const run = db.prepare('SELECT * FROM ingestion_runs ORDER BY id DESC LIMIT 1').get();
+      const details = JSON.parse(run.details_json);
+
+      expect(result.processedCount).toBe(2);
+      expect(result.publishedCount).toBe(2);
+      expect(details.ingestionWindow.from).toBe('2026-03-13T05:00:00.000Z');
+      expect(details.ingestionWindow.mode).toBe('manual_recent');
+      expect(details.ingestionWindow.lookbackHours).toBe(4);
+      expect(details.ingestionWindow.overlapMinutes).toBe(30);
+      expect(details.sources[0].windowSkippedCount).toBe(1);
     } finally {
       db.close();
       vi.useRealTimers();
@@ -273,9 +402,9 @@ describe('ingestion pipeline', () => {
       async fetchFeedItems() {
         return [
           {
-            title: 'Resolved old article',
-            link: 'https://example.org/old-story',
-            publishedAt: null,
+          title: 'Resolved old article',
+          link: 'https://example.org/old-story',
+          publishedAt: null,
             feedSummary: '',
             feedContent: ''
           },
@@ -295,7 +424,7 @@ describe('ingestion pipeline', () => {
           sourceUrl: item.link,
           title: item.title,
           publishedAt: item.link.includes('old')
-            ? '2026-03-13T08:40:00.000Z'
+            ? '2026-03-13T08:10:00.000Z'
             : '2026-03-13T09:10:00.000Z',
           content: item.title
         };
@@ -349,10 +478,11 @@ describe('ingestion pipeline', () => {
         pipelineMode: 'semantic',
         publishThreshold: 0.8,
         ingestCron: '0 * * * *',
+        ingestionWindowOverlapMinutes: 30,
         maxItemsPerSource: 5
       });
 
-      const result = await ingestService.runIngestion({ trigger: 'manual' });
+      const result = await ingestService.runIngestion({ trigger: 'scheduler' });
       const rawCount = db.prepare('SELECT COUNT(*) AS count FROM articles_raw').get().count;
       const details = JSON.parse(
         db.prepare('SELECT details_json FROM ingestion_runs ORDER BY id DESC LIMIT 1').get().details_json

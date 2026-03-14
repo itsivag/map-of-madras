@@ -125,6 +125,23 @@ a {
   line-height: 1.35;
 }
 
+.map-disclaimer {
+  position: fixed;
+  right: 20px;
+  bottom: 18px;
+  z-index: 600;
+  max-width: min(420px, calc(100vw - 40px));
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.78);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.74rem;
+  line-height: 1.45;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(12px);
+}
+
 .crime-emoji-icon {
   background: transparent;
   border: 0;
@@ -203,5 +220,11 @@ a {
     top: 12px;
     left: 68px;
     width: calc(100vw - 80px);
+  }
+
+  .map-disclaimer {
+    right: 12px;
+    bottom: 12px;
+    max-width: calc(100vw - 24px);
   }
 }

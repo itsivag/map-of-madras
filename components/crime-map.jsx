@@ -32,6 +32,8 @@ const TIME_PRESETS = [
 ];
 
 const DEFAULT_META = {
+  disclaimer:
+    'Markers are fetched and filtered by AI from news reports and may contain errors. This is not an official police record.',
   boundary: {
     maxBounds: [
       [12.86, 79.85],
@@ -152,6 +154,7 @@ export function CrimeMap() {
   const [mapReady, setMapReady] = useState(false);
   const [statusText, setStatusText] = useState('Loading recent incidents');
   const [lastUpdatedText, setLastUpdatedText] = useState('Checking latest ingest');
+  const [disclaimerText, setDisclaimerText] = useState(DEFAULT_META.disclaimer);
 
   function clearPinnedMarker() {
     if (!pinnedMarkerRef.current) {
@@ -425,6 +428,7 @@ export function CrimeMap() {
         if (isActive) {
           applyChennaiBounds(metaPayload);
           setLastUpdatedText(formatLastUpdated(metaPayload.lastRun));
+          setDisclaimerText(metaPayload.disclaimer || DEFAULT_META.disclaimer);
         }
       } catch (error) {
         console.error('Primary metadata API failed, using fallback boundary:', error.message);
@@ -433,11 +437,13 @@ export function CrimeMap() {
           if (isActive) {
             applyChennaiBounds(fallbackMeta);
             setLastUpdatedText('Fallback snapshot');
+            setDisclaimerText(fallbackMeta?.disclaimer || DEFAULT_META.disclaimer);
           }
         } catch (fallbackError) {
           console.error('Fallback metadata failed:', fallbackError.message);
           if (isActive) {
             setLastUpdatedText('Unavailable');
+            setDisclaimerText(DEFAULT_META.disclaimer);
           }
         }
       }
@@ -541,6 +547,7 @@ export function CrimeMap() {
         <div className="status-pill">{statusText}</div>
         <div className="time-widget__updated">Last updated: {lastUpdatedText}</div>
       </section>
+      <div className="map-disclaimer">{disclaimerText}</div>
     </section>
   );
 }

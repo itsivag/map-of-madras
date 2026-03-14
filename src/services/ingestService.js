@@ -168,17 +168,39 @@ function getPreviousCronBoundary(cronExpression, referenceDate) {
   return fallback;
 }
 
-function buildIngestionWindow(cronExpression, referenceDate) {
+function buildIngestionWindow({
+  trigger,
+  cronExpression,
+  referenceDate,
+  manualLookbackHours,
+  overlapMinutes
+}) {
+  const overlapMs = Math.max(0, Number(overlapMinutes) || 0) * 60 * 1000;
   const to = new Date(referenceDate.getTime());
-  const from = getPreviousCronBoundary(cronExpression, referenceDate);
-  return {
-    from,
-    to
-  };
-}
 
-function shouldApplyIngestionWindow(trigger) {
-  return trigger === 'scheduler' || trigger === 'startup' || trigger === 'manual';
+  if (trigger === 'manual') {
+    const lookbackHours = Math.max(1, Number(manualLookbackHours) || 4);
+    return {
+      from: new Date(referenceDate.getTime() - lookbackHours * 60 * 60 * 1000 - overlapMs),
+      to,
+      mode: 'manual_recent',
+      lookbackHours,
+      overlapMinutes: Math.max(0, Number(overlapMinutes) || 0)
+    };
+  }
+
+  if (trigger === 'scheduler' || trigger === 'startup') {
+    const previousBoundary = getPreviousCronBoundary(cronExpression, referenceDate);
+    return {
+      from: new Date(previousBoundary.getTime() - overlapMs),
+      to,
+      mode: 'scheduled_cron',
+      lookbackHours: null,
+      overlapMinutes: Math.max(0, Number(overlapMinutes) || 0)
+    };
+  }
+
+  return null;
 }
 
 function isWithinIngestionWindow(value, window) {
@@ -199,6 +221,8 @@ export class IngestService {
     pipelineMode = 'semantic',
     publishThreshold = 0.8,
     ingestCron = '0 * * * *',
+    manualLookbackHours = 4,
+    ingestionWindowOverlapMinutes = 30,
     maxItemsPerSource = 6,
     sourceTimeBudgetMs = 90000,
     itemTimeoutMs = 20000,
@@ -211,6 +235,10 @@ export class IngestService {
     this.pipelineMode = pipelineMode === 'shadow' ? 'shadow' : 'semantic';
     this.publishThreshold = publishThreshold;
     this.ingestCron = ingestCron;
+    this.manualLookbackHours = Number.isFinite(manualLookbackHours) ? manualLookbackHours : 4;
+    this.ingestionWindowOverlapMinutes = Number.isFinite(ingestionWindowOverlapMinutes)
+      ? ingestionWindowOverlapMinutes
+      : 30;
     this.maxItemsPerSource = Number.isFinite(maxItemsPerSource) ? maxItemsPerSource : 6;
     this.sourceTimeBudgetMs = Number.isFinite(sourceTimeBudgetMs) ? sourceTimeBudgetMs : 90000;
     this.itemTimeoutMs = Number.isFinite(itemTimeoutMs) ? itemTimeoutMs : 20000;
@@ -823,9 +851,13 @@ export class IngestService {
   async runIngestion({ trigger = 'manual' } = {}) {
     const startedAtDate = new Date();
     const startedAt = startedAtDate.toISOString();
-    const ingestionWindow = shouldApplyIngestionWindow(trigger)
-      ? buildIngestionWindow(this.ingestCron, startedAtDate)
-      : null;
+    const ingestionWindow = buildIngestionWindow({
+      trigger,
+      cronExpression: this.ingestCron,
+      referenceDate: startedAtDate,
+      manualLookbackHours: this.manualLookbackHours,
+      overlapMinutes: this.ingestionWindowOverlapMinutes
+    });
     const runDetails = {
       trigger,
       pipelineMode: this.pipelineMode,
@@ -834,11 +866,16 @@ export class IngestService {
       ingestionWindow: ingestionWindow
         ? {
             from: ingestionWindow.from.toISOString(),
-            to: ingestionWindow.to.toISOString()
+            to: ingestionWindow.to.toISOString(),
+            mode: ingestionWindow.mode,
+            lookbackHours: ingestionWindow.lookbackHours,
+            overlapMinutes: ingestionWindow.overlapMinutes
           }
         : null,
       limits: {
         ingestCron: this.ingestCron,
+        manualLookbackHours: this.manualLookbackHours,
+        ingestionWindowOverlapMinutes: this.ingestionWindowOverlapMinutes,
         maxItemsPerSource: this.maxItemsPerSource,
         sourceTimeBudgetMs: this.sourceTimeBudgetMs,
         itemTimeoutMs: this.itemTimeoutMs,

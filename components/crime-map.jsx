@@ -157,8 +157,9 @@ export function CrimeMap() {
   const [statusText, setStatusText] = useState('Loading recent incidents');
   const [lastUpdatedText, setLastUpdatedText] = useState('Checking latest ingest');
   const [disclaimerText, setDisclaimerText] = useState(DEFAULT_META.disclaimer);
-  const [incidentList, setIncidentList] = useState([]);
+  const [allIncidents, setAllIncidents] = useState([]);
   const [activeIncidentId, setActiveIncidentId] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState('all');
 
   function clearPinnedMarker() {
     if (!pinnedMarkerRef.current) {
@@ -264,7 +265,6 @@ export function CrimeMap() {
     }
 
     incidentsRef.current = incidents;
-    setIncidentList(incidents);
     setActiveIncidentId((current) =>
       incidents.some((incident) => incident.id === current) ? current : incidents[0]?.id ?? null
     );
@@ -548,9 +548,7 @@ export function CrimeMap() {
         return;
       }
 
-      renderIncidents(payload.incidents || []);
-      focusIncidents();
-      setStatusText(`${(payload.incidents || []).length} incidents mapped`);
+      setAllIncidents(payload.incidents || []);
     }
 
     loadIncidents().catch((error) => {
@@ -565,74 +563,121 @@ export function CrimeMap() {
     };
   }, [mapReady, timePreset]);
 
+  useEffect(() => {
+    const categories = new Set(allIncidents.map((incident) => incident.category || 'other'));
+    if (selectedCategory !== 'all' && !categories.has(selectedCategory)) {
+      setSelectedCategory('all');
+    }
+  }, [allIncidents, selectedCategory]);
+
+  const filteredIncidents = allIncidents.filter(
+    (incident) => selectedCategory === 'all' || (incident.category || 'other') === selectedCategory
+  );
+
+  useEffect(() => {
+    if (!mapReady) {
+      return;
+    }
+
+    renderIncidents(filteredIncidents);
+    focusIncidents();
+    setStatusText(`${filteredIncidents.length} incidents mapped`);
+  }, [mapReady, allIncidents, selectedCategory]);
+
   const currentPreset = getPreset(timePreset);
   const sliderIndex = TIME_PRESETS.findIndex((preset) => preset.id === currentPreset.id);
+  const categoryChips = [
+    { id: 'all', label: 'All', count: allIncidents.length },
+    ...[...new Set(allIncidents.map((incident) => incident.category || 'other'))].map((category) => ({
+      id: category,
+      label: category,
+      count: allIncidents.filter((incident) => (incident.category || 'other') === category).length
+    }))
+  ];
 
   return (
     <section className="map-stage" aria-label="Map of Chennai incidents">
       <div id="map" ref={mapNodeRef} />
-
-      <section className="time-widget" aria-label="Time range filter">
-        <div className="time-widget__label" id="time-range-label">
-          {currentPreset.label}
-        </div>
-        <input
-          id="time-slider"
-          className="time-slider"
-          type="range"
-          min="0"
-          max="3"
-          step="1"
-          value={sliderIndex === -1 ? 2 : sliderIndex}
-          aria-label="Time range slider"
-          onChange={(event) => {
-            const nextPreset = TIME_PRESETS[Number(event.target.value)] || TIME_PRESETS[2];
-            setTimePreset(nextPreset.id);
-          }}
-        />
-        <div className="time-slider-scale" aria-hidden="true">
-          <span>24h</span>
-          <span>2d</span>
-          <span>7d</span>
-          <span>30d</span>
-        </div>
-        <div className="status-pill">{statusText}</div>
-        <div className="time-widget__updated">Last updated: {lastUpdatedText}</div>
-      </section>
-      <aside className="incident-rail" aria-label="Incident list" ref={listPanelRef}>
-        <div className="incident-rail__header">
-          <strong>Incidents</strong>
-          <span>{incidentList.length}</span>
-        </div>
-        <div className="incident-rail__list">
-          {incidentList.length ? (
-            incidentList.map((incident) => (
+      <div className="map-sidebar">
+        <aside className="incident-rail" aria-label="Incident list" ref={listPanelRef}>
+          <div className="incident-rail__header">
+            <strong>Incidents</strong>
+            <span>{filteredIncidents.length}</span>
+          </div>
+          <div className="incident-rail__filters" aria-label="Incident category filters">
+            {categoryChips.map((chip) => (
               <button
-                key={incident.id}
+                key={chip.id}
                 type="button"
-                className={`incident-rail__item${activeIncidentId === incident.id ? ' is-active' : ''}`}
-                onClick={() => focusIncidentById(incident.id)}
+                className={`incident-rail__chip${selectedCategory === chip.id ? ' is-active' : ''}`}
+                onClick={() => setSelectedCategory(chip.id)}
               >
-                <span
-                  className="incident-rail__dot"
-                  style={{ backgroundColor: CATEGORY_COLORS[incident.category] || CATEGORY_COLORS.other }}
-                  aria-hidden="true"
-                />
-                <span className="incident-rail__body">
-                  <span className="incident-rail__title">
-                    {incident.locality || incident.title || 'Unknown locality'}
-                  </span>
-                  <span className="incident-rail__meta">
-                    {incident.category || 'other'} · {formatIncidentDate(incident)}
-                  </span>
-                </span>
+                <span>{chip.label}</span>
+                <span>{chip.count}</span>
               </button>
-            ))
-          ) : (
-            <div className="incident-rail__empty">No incidents for this time range.</div>
-          )}
-        </div>
-      </aside>
+            ))}
+          </div>
+          <div className="incident-rail__list">
+            {filteredIncidents.length ? (
+              filteredIncidents.map((incident) => (
+                <button
+                  key={incident.id}
+                  type="button"
+                  className={`incident-rail__item${activeIncidentId === incident.id ? ' is-active' : ''}`}
+                  onClick={() => focusIncidentById(incident.id)}
+                >
+                  <span
+                    className="incident-rail__dot"
+                    style={{ backgroundColor: CATEGORY_COLORS[incident.category] || CATEGORY_COLORS.other }}
+                    aria-hidden="true"
+                  />
+                  <span className="incident-rail__body">
+                    <span className="incident-rail__title">
+                      {incident.title || 'Untitled incident'}
+                    </span>
+                    <span className="incident-rail__meta">
+                      {(incident.locality || 'Unknown locality') +
+                        ' · ' +
+                        (incident.category || 'other') +
+                        ' · ' +
+                        formatIncidentDate(incident)}
+                    </span>
+                  </span>
+                </button>
+              ))
+            ) : (
+              <div className="incident-rail__empty">No incidents for this filter.</div>
+            )}
+          </div>
+        </aside>
+        <section className="time-widget" aria-label="Time range filter">
+          <div className="time-widget__label" id="time-range-label">
+            {currentPreset.label}
+          </div>
+          <input
+            id="time-slider"
+            className="time-slider"
+            type="range"
+            min="0"
+            max="3"
+            step="1"
+            value={sliderIndex === -1 ? 2 : sliderIndex}
+            aria-label="Time range slider"
+            onChange={(event) => {
+              const nextPreset = TIME_PRESETS[Number(event.target.value)] || TIME_PRESETS[2];
+              setTimePreset(nextPreset.id);
+            }}
+          />
+          <div className="time-slider-scale" aria-hidden="true">
+            <span>24h</span>
+            <span>2d</span>
+            <span>7d</span>
+            <span>30d</span>
+          </div>
+          <div className="status-pill">{statusText}</div>
+          <div className="time-widget__updated">Last updated: {lastUpdatedText}</div>
+        </section>
+      </div>
       <div className="map-disclaimer">{disclaimerText}</div>
     </section>
   );

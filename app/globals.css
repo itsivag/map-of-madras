@@ -58,12 +58,20 @@ a {
     linear-gradient(180deg, #270206, #090001 75%);
 }
 
-.time-widget {
+.map-sidebar {
   position: fixed;
   top: 20px;
-  left: 84px;
+  right: 20px;
   z-index: 600;
-  width: min(280px, calc(100vw - 40px));
+  width: min(320px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.time-widget {
+  width: 100%;
   padding: 14px 14px 12px;
   border: 1px solid rgba(255, 255, 255, 0.24);
   border-radius: 16px;
@@ -143,14 +151,9 @@ a {
 }
 
 .incident-rail {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  z-index: 600;
-  width: min(320px, calc(100vw - 40px));
-  max-height: calc(100vh - 110px);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 18px;
   background: rgba(0, 0, 0, 0.84);
@@ -178,6 +181,47 @@ a {
 .incident-rail__header span {
   color: rgba(255, 255, 255, 0.62);
   font-size: 0.78rem;
+}
+
+.incident-rail__filters {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.incident-rail__filters::-webkit-scrollbar {
+  display: none;
+}
+
+.incident-rail__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.76);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.incident-rail__chip span:last-child {
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 0.75rem;
+}
+
+.incident-rail__chip.is-active,
+.incident-rail__chip:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.incident-rail__chip.is-active span:last-child,
+.incident-rail__chip:hover span:last-child {
+  color: rgba(255, 255, 255, 0.84);
 }
 
 .incident-rail__list {
@@ -320,18 +364,16 @@ a {
 }
 
 @media (max-width: 720px) {
-  .time-widget {
-    top: 12px;
-    left: 68px;
-    width: calc(100vw - 80px);
-  }
-
-  .incident-rail {
+  .map-sidebar {
     top: auto;
     right: 12px;
     bottom: 68px;
     left: 12px;
     width: auto;
+    max-height: calc(100vh - 92px);
+  }
+
+  .incident-rail {
     max-height: min(34vh, 280px);
   }
 

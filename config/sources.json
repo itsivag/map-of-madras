@@ -94,7 +94,7 @@
     "name": "Dinamani Chennai Tamil",
     "feedUrl": "https://www.dinamani.com/all-editions/edition-chennai/chennai",
     "websiteUrl": "https://www.dinamani.com/all-editions/edition-chennai/chennai",
-    "enabled": true,
+    "enabled": false,
     "parserMode": "html-links",
     "htmlLinkIncludePatterns": [
       "/all-editions/edition-chennai/chennai/"
@@ -105,7 +105,7 @@
     "name": "Google News Chennai Crime Tamil",
     "feedUrl": "https://news.google.com/rss/search?q=%E0%AE%9A%E0%AF%86%E0%AE%A9%E0%AF%8D%E0%AE%A9%E0%AF%88%20(%E0%AE%95%E0%AF%8A%E0%AE%B2%E0%AF%88%20OR%20%E0%AE%95%E0%AF%81%E0%AE%B1%E0%AF%8D%E0%AE%B1%E0%AE%AE%E0%AF%8D%20OR%20%E0%AE%AA%E0%AE%BE%E0%AE%B2%E0%AE%BF%E0%AE%AF%E0%AE%B2%E0%AF%8D)&hl=ta&gl=IN&ceid=IN:ta",
     "websiteUrl": "https://news.google.com/",
-    "enabled": true,
+    "enabled": false,
     "parserMode": "rss"
   }
 ]

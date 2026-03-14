@@ -2,10 +2,15 @@
 
 Map of Madras is a Chennai-focused incident map that continuously ingests crime-related news coverage, extracts structured incident data, and plots recent incidents on a restricted Chennai map.
 
+Live deployment:
+
+- frontend: [https://chennai-gbu-map.web.app](https://chennai-gbu-map.web.app)
+- backend API: [https://backend-production-a0f6.up.railway.app](https://backend-production-a0f6.up.railway.app)
+
 The repo now has a split deployment model:
 
 - frontend: static Next.js app exported to `out/` and deployed with Firebase Hosting
-- backend: Node + Express API for ingestion, metadata, and incident feeds
+- backend: Node + Express API deployed on Railway for ingestion, metadata, and incident feeds
 - data services: SQLite for operations and Qdrant for vector retrieval
 
 ## What the app does
@@ -26,7 +31,7 @@ The repo now has a split deployment model:
 - Firebase Hosting serves the exported `out/` directory
 - Runtime API base URL injected into `public/runtime-config.js`
 
-The frontend expects the backend API to be reachable through `window.CCM_CONFIG.apiBaseUrl`. During local Next.js development this defaults to `http://localhost:3000`. For production Firebase builds, set `FRONTEND_API_BASE_URL` before running `npm run build:hosting`.
+The frontend expects the backend API to be reachable through `window.CCM_CONFIG.apiBaseUrl`. During local Next.js development this defaults to `http://localhost:3000`. The current production build points to `https://backend-production-a0f6.up.railway.app`.
 
 ## API summary
 
@@ -101,7 +106,7 @@ The frontend will be available at `http://localhost:3001`.
 ### 6. Build the Firebase Hosting bundle
 
 ```bash
-FRONTEND_API_BASE_URL=https://your-api-host.example.com npm run build:hosting
+FRONTEND_API_BASE_URL=https://backend-production-a0f6.up.railway.app npm run build:hosting
 ```
 
 This writes the static export to `out/`.
@@ -111,7 +116,7 @@ This writes the static export to `out/`.
 ```bash
 firebase login
 firebase use --add
-FRONTEND_API_BASE_URL=https://your-api-host.example.com npm run deploy:hosting
+FRONTEND_API_BASE_URL=https://backend-production-a0f6.up.railway.app npm run deploy:hosting
 ```
 
 `firebase.json` is already configured to serve `out/`.
@@ -121,12 +126,15 @@ FRONTEND_API_BASE_URL=https://your-api-host.example.com npm run deploy:hosting
 The repo includes [`.github/workflows/deploy-firebase-hosting.yml`](/Users/itsivag/AntigravityProjects/chennai-gbu-map/.github/workflows/deploy-firebase-hosting.yml). Configure these repository settings before using it:
 
 - Repository variable: `FIREBASE_PROJECT_ID`
+  Current value: `chennai-gbu-map`
 - Repository variable: `FRONTEND_API_BASE_URL`
+  Current value: `https://backend-production-a0f6.up.railway.app`
 - Repository secret: `FIREBASE_SERVICE_ACCOUNT`
 
 ## Important limitations
 
 - This app maps incidents from reported news coverage, not authoritative crime records.
+- Firecrawl credits are required for live article extraction, and ingestion will stall when that quota is exhausted.
 - Geocoding can still be approximate when articles only mention broad locations.
 - Source quality and publisher behavior can affect extraction quality.
 

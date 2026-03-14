@@ -212,6 +212,54 @@ function isWithinIngestionWindow(value, window) {
   return timestamp.getTime() >= window.from.getTime() && timestamp.getTime() <= window.to.getTime();
 }
 
+const CRIME_HINT_PATTERNS = [
+  /\bmurder\b/i,
+  /\bkilled\b/i,
+  /\bdeath\b/i,
+  /\bdead\b/i,
+  /\brape\b/i,
+  /\bsexual(?:ly)? assault/i,
+  /\bassault\b/i,
+  /\brobber(?:y|ies)?\b/i,
+  /\btheft\b/i,
+  /\bburglary\b/i,
+  /\bchain snatch/i,
+  /\bkidnap(?:ped|ping)?\b/i,
+  /\babduction\b/i,
+  /\bscam\b/i,
+  /\bfraud\b/i,
+  /\bcheat(?:ing|ed)?\b/i,
+  /\bcyber ?crime\b/i,
+  /\bganja\b/i,
+  /\bnarcotic/i,
+  /\bdrug\b/i,
+  /\barrest(?:ed)?\b/i,
+  /\bheld\b/i,
+  /\bdetained\b/i,
+  /\bbooked\b/i,
+  /\bhacked to death\b/i,
+  /\bbeat(?:en)? to death\b/i,
+  /\battack(?:ed)?\b/i,
+  /\bstabbed\b/i
+];
+
+function isLikelyCrimeFeedItem(item) {
+  const haystack = [item?.title, item?.feedSummary, item?.feedContent]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+
+  if (!haystack) {
+    return true;
+  }
+
+  return CRIME_HINT_PATTERNS.some((pattern) => pattern.test(haystack));
+}
+
+function shouldApplyCrimeKeywordFilter(source) {
+  return Boolean(source?.crime_keyword_filter ?? source?.crimeKeywordFilter);
+}
+
 export class IngestService {
   constructor({
     db,
@@ -279,11 +327,12 @@ export class IngestService {
       SELECT
         id,
         name,
-        feed_url,
-        website_url,
-        enabled,
-        parser_mode,
-        html_link_include_patterns,
+      feed_url,
+      website_url,
+      enabled,
+      parser_mode,
+      crime_keyword_filter,
+      html_link_include_patterns,
         html_link_exclude_patterns,
         last_success_at,
         last_error
@@ -296,11 +345,12 @@ export class IngestService {
       SELECT
         id,
         name,
-        feed_url,
-        website_url,
-        enabled,
-        parser_mode,
-        html_link_include_patterns,
+      feed_url,
+      website_url,
+      enabled,
+      parser_mode,
+      crime_keyword_filter,
+      html_link_include_patterns,
         html_link_exclude_patterns
       FROM sources
       ORDER BY name ASC
@@ -938,6 +988,7 @@ export class IngestService {
         rejectedCount: 0,
         skippedCount: 0,
         windowSkippedCount: 0,
+        keywordSkippedCount: 0,
         errors: []
       };
 
@@ -956,10 +1007,18 @@ export class IngestService {
           return isWithinIngestionWindow(item.publishedAt, ingestionWindow);
         });
         sourceDetail.windowSkippedCount = Math.max(0, discoveredItems.length - windowEligibleItems.length);
-        const items = windowEligibleItems.slice(0, this.maxItemsPerSource);
+        const keywordEligibleItems = shouldApplyCrimeKeywordFilter(source)
+          ? windowEligibleItems.filter((item) => isLikelyCrimeFeedItem(item))
+          : windowEligibleItems;
+        sourceDetail.keywordSkippedCount = shouldApplyCrimeKeywordFilter(source)
+          ? Math.max(0, windowEligibleItems.length - keywordEligibleItems.length)
+          : 0;
+        const items = keywordEligibleItems.slice(0, this.maxItemsPerSource);
         sourceDetail.fetchedCount = items.length;
         sourceDetail.skippedCount =
-          sourceDetail.windowSkippedCount + Math.max(0, windowEligibleItems.length - items.length);
+          sourceDetail.windowSkippedCount +
+          sourceDetail.keywordSkippedCount +
+          Math.max(0, keywordEligibleItems.length - items.length);
 
         if (sourceDetail.windowSkippedCount > 0) {
           sourceDetail.errors.push({
@@ -968,7 +1027,14 @@ export class IngestService {
           });
         }
 
-        if (windowEligibleItems.length > items.length) {
+        if (sourceDetail.keywordSkippedCount > 0) {
+          sourceDetail.errors.push({
+            stage: 'keyword',
+            message: `${sourceDetail.keywordSkippedCount} items were skipped because they did not look crime-related.`
+          });
+        }
+
+        if (keywordEligibleItems.length > items.length) {
           sourceDetail.errors.push({
             stage: 'limit',
             message: `Source capped at ${this.maxItemsPerSource} items for this run.`

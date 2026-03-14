@@ -380,6 +380,115 @@ describe('ingestion pipeline', () => {
     }
   });
 
+  it('skips non-crime feed items before enrichment', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crime-map-keyword-filter-test-'));
+    const dbPath = path.join(tempDir, 'keyword-filter.sqlite');
+
+    const db = initDatabase(dbPath, [
+      {
+        id: 'fixture-source',
+        name: 'Fixture Source',
+        feedUrl: 'https://example.org/feed.xml',
+        websiteUrl: 'https://example.org',
+        enabled: true,
+        crimeKeywordFilter: true,
+        parserMode: 'rss'
+      }
+    ]);
+
+    const rssService = {
+      async fetchFeedItems() {
+        return [
+          {
+            title: 'City launches new health walk in Adyar',
+            link: 'https://example.org/non-crime',
+            publishedAt: '2026-03-13T09:05:00.000Z',
+            feedSummary: '',
+            feedContent: ''
+          },
+          {
+            title: 'Three arrested for robbery in Chennai',
+            link: 'https://example.org/crime',
+            publishedAt: '2026-03-13T09:10:00.000Z',
+            feedSummary: '',
+            feedContent: ''
+          }
+        ];
+      },
+      async enrichItem(source, item) {
+        return {
+          sourceId: source.id,
+          sourceName: source.name,
+          sourceUrl: item.link,
+          title: item.title,
+          publishedAt: item.publishedAt,
+          content: item.title
+        };
+      }
+    };
+
+    const semanticPipeline = {
+      isConfigured() {
+        return true;
+      },
+      async analyzeArticle({ article }) {
+        return {
+          stage: 'ready_to_publish',
+          decision: 'publish',
+          extraction: {
+            category: 'robbery/theft'
+          },
+          incidentCandidate: {
+            dedupe: buildDedupeKey({
+              title: article.title,
+              category: 'robbery/theft',
+              subcategory: 'keyword-filter-test',
+              occurredAt: article.publishedAt,
+              locality: 'Chennai',
+              lat: 13.09,
+              lng: 80.29
+            }),
+            category: 'robbery/theft',
+            subcategory: 'keyword-filter-test',
+            occurredAt: article.publishedAt,
+            locality: 'Chennai',
+            lat: 13.09,
+            lng: 80.29,
+            confidence: 0.95,
+            sourceName: 'Fixture Source',
+            sourceUrl: article.sourceUrl,
+            sourceDomain: 'example.org',
+            title: article.title,
+            summary: 'Keyword filter test incident.',
+            publishedAt: new Date().toISOString()
+          }
+        };
+      }
+    };
+
+    try {
+      const ingestService = new IngestService({
+        db,
+        rssService,
+        semanticPipeline,
+        pipelineMode: 'semantic',
+        publishThreshold: 0.8,
+        maxItemsPerSource: 5
+      });
+
+      const result = await ingestService.runIngestion({ trigger: 'test' });
+      const details = JSON.parse(
+        db.prepare('SELECT details_json FROM ingestion_runs ORDER BY id DESC LIMIT 1').get().details_json
+      );
+
+      expect(result.processedCount).toBe(1);
+      expect(result.publishedCount).toBe(1);
+      expect(details.sources[0].keywordSkippedCount).toBe(1);
+    } finally {
+      db.close();
+    }
+  });
+
   it('skips enriched articles that resolve outside the current cron window', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-03-13T09:30:00.000Z'));

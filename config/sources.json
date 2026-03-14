@@ -5,6 +5,7 @@
     "feedUrl": "https://www.thehindu.com/news/cities/chennai/feeder/default.rss",
     "websiteUrl": "https://www.thehindu.com/news/cities/chennai/",
     "enabled": true,
+    "crimeKeywordFilter": true,
     "parserMode": "rss"
   },
   {
@@ -13,6 +14,7 @@
     "feedUrl": "https://timesofindia.indiatimes.com/city/chennai",
     "websiteUrl": "https://timesofindia.indiatimes.com/city/chennai",
     "enabled": true,
+    "crimeKeywordFilter": true,
     "parserMode": "html-links",
     "htmlLinkIncludePatterns": [
       "/city/chennai/",
@@ -24,7 +26,7 @@
     "name": "Google News Chennai Crime",
     "feedUrl": "https://news.google.com/rss/search?q=crime+OR+murder+OR+rape+OR+kidnapping+OR+robbery+Chennai&hl=en-IN&gl=IN&ceid=IN:en",
     "websiteUrl": "https://news.google.com/",
-    "enabled": true,
+    "enabled": false,
     "parserMode": "rss"
   },
   {
@@ -32,7 +34,7 @@
     "name": "Google News Chennai Suburbs North West",
     "feedUrl": "https://news.google.com/rss/search?q=(crime+OR+murder+OR+rape+OR+kidnapping+OR+robbery)+(Avadi+OR+Ambattur+OR+Madhavaram+OR+Puzhal+OR+Tiruvottiyur+OR+Ennore+OR+Red+Hills)&hl=en-IN&gl=IN&ceid=IN:en",
     "websiteUrl": "https://news.google.com/",
-    "enabled": true,
+    "enabled": false,
     "parserMode": "rss"
   },
   {
@@ -40,7 +42,7 @@
     "name": "Google News Chennai Suburbs South West",
     "feedUrl": "https://news.google.com/rss/search?q=(crime+OR+murder+OR+rape+OR+kidnapping+OR+robbery)+(Tambaram+OR+Pallavaram+OR+Chromepet+OR+Selaiyur+OR+Perungalathur+OR+Guduvancheri+OR+Urapakkam+OR+Meenambakkam)&hl=en-IN&gl=IN&ceid=IN:en",
     "websiteUrl": "https://news.google.com/",
-    "enabled": true,
+    "enabled": false,
     "parserMode": "rss"
   },
   {
@@ -48,7 +50,7 @@
     "name": "Google News Chennai Suburbs South East",
     "feedUrl": "https://news.google.com/rss/search?q=(crime+OR+murder+OR+rape+OR+kidnapping+OR+robbery)+(Velachery+OR+Pallikaranai+OR+Medavakkam+OR+Perungudi+OR+Thoraipakkam+OR+Sholinganallur+OR+Neelankarai+OR+Injambakkam+OR+Kelambakkam)&hl=en-IN&gl=IN&ceid=IN:en",
     "websiteUrl": "https://news.google.com/",
-    "enabled": true,
+    "enabled": false,
     "parserMode": "rss"
   },
   {
@@ -56,7 +58,7 @@
     "name": "Google News Chennai Suburbs West",
     "feedUrl": "https://news.google.com/rss/search?q=(crime+OR+murder+OR+rape+OR+kidnapping+OR+robbery)+(Porur+OR+Poonamallee+OR+Iyyapanthangal+OR+Thiruverkadu+OR+Maduravoyal+OR+Valasaravakkam+OR+Nolambur+OR+Mogappair)&hl=en-IN&gl=IN&ceid=IN:en",
     "websiteUrl": "https://news.google.com/",
-    "enabled": true,
+    "enabled": false,
     "parserMode": "rss"
   },
   {
@@ -65,6 +67,7 @@
     "feedUrl": "https://indianexpress.com/section/cities/chennai/feed/",
     "websiteUrl": "https://indianexpress.com/section/cities/chennai/",
     "enabled": true,
+    "crimeKeywordFilter": true,
     "parserMode": "rss"
   },
   {
@@ -73,6 +76,7 @@
     "feedUrl": "https://www.newindianexpress.com/cities/chennai",
     "websiteUrl": "https://www.newindianexpress.com/cities/chennai",
     "enabled": true,
+    "crimeKeywordFilter": true,
     "parserMode": "html-links",
     "htmlLinkIncludePatterns": [
       "/cities/chennai/"
@@ -84,6 +88,7 @@
     "feedUrl": "https://www.dtnext.in/news/chennai",
     "websiteUrl": "https://www.dtnext.in/news/chennai",
     "enabled": true,
+    "crimeKeywordFilter": true,
     "parserMode": "html-links",
     "htmlLinkIncludePatterns": [
       "/news/chennai/"

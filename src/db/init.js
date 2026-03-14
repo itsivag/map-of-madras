@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS sources (
   website_url TEXT,
   enabled INTEGER NOT NULL DEFAULT 1,
   parser_mode TEXT NOT NULL DEFAULT 'rss',
+  crime_keyword_filter INTEGER NOT NULL DEFAULT 0,
   html_link_include_patterns TEXT,
   html_link_exclude_patterns TEXT,
   last_success_at TEXT,
@@ -135,6 +136,7 @@ const ARTICLE_RAW_COLUMNS = [
 ];
 
 const SOURCE_COLUMNS = [
+  ['crime_keyword_filter', 'INTEGER NOT NULL DEFAULT 0'],
   ['html_link_include_patterns', 'TEXT'],
   ['html_link_exclude_patterns', 'TEXT']
 ];
@@ -165,6 +167,7 @@ function seedSources(db, sourceConfigs) {
       website_url,
       enabled,
       parser_mode,
+      crime_keyword_filter,
       html_link_include_patterns,
       html_link_exclude_patterns,
       updated_at
@@ -176,6 +179,7 @@ function seedSources(db, sourceConfigs) {
       @websiteUrl,
       @enabled,
       @parserMode,
+      @crimeKeywordFilter,
       @htmlLinkIncludePatterns,
       @htmlLinkExcludePatterns,
       datetime('now')
@@ -186,6 +190,7 @@ function seedSources(db, sourceConfigs) {
       website_url = excluded.website_url,
       enabled = excluded.enabled,
       parser_mode = excluded.parser_mode,
+      crime_keyword_filter = excluded.crime_keyword_filter,
       html_link_include_patterns = excluded.html_link_include_patterns,
       html_link_exclude_patterns = excluded.html_link_exclude_patterns,
       updated_at = datetime('now')
@@ -200,6 +205,7 @@ function seedSources(db, sourceConfigs) {
         websiteUrl: source.websiteUrl || null,
         enabled: source.enabled ? 1 : 0,
         parserMode: source.parserMode || 'rss',
+        crimeKeywordFilter: source.crimeKeywordFilter ? 1 : 0,
         htmlLinkIncludePatterns: Array.isArray(source.htmlLinkIncludePatterns)
           ? JSON.stringify(source.htmlLinkIncludePatterns)
           : null,

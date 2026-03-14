@@ -30,11 +30,6 @@ jobs:
         run: |
           printf '%s' "$SECRETS_ENV" > .env
 
-      - name: Export .env to workflow environment
-        shell: bash
-        run: |
-          grep -Ev '^[[:space:]]*($|#)' .env >> "$GITHUB_ENV"
-
       - name: Install dependencies
         run: npm ci
 
@@ -42,11 +37,14 @@ jobs:
         run: npm test
 
       - name: Deploy to Railway
+        shell: bash
         env:
           NPM_CONFIG_CACHE: ${{ github.workspace }}/.npm-cache
-          RAILWAY_TOKEN: ${{ env.RAILWAY_TOKEN }}
-        run: >
-          npx -y @railway/cli up --ci --detach
-          --service "$RAILWAY_SERVICE"
-          --environment "$RAILWAY_ENVIRONMENT"
-          --project "$RAILWAY_PROJECT_ID"
+        run: |
+          set -a
+          source .env
+          set +a
+          npx -y @railway/cli up --ci --detach \
+            --service "$RAILWAY_SERVICE" \
+            --environment "$RAILWAY_ENVIRONMENT" \
+            --project "$RAILWAY_PROJECT_ID"

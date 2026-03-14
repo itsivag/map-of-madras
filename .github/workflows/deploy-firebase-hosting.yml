@@ -31,16 +31,21 @@ jobs:
         run: |
           printf '%s' "$SECRETS_ENV" > .env
 
-      - name: Export .env to workflow environment
-        shell: bash
-        run: |
-          grep -Ev '^[[:space:]]*($|#)' .env >> "$GITHUB_ENV"
-
       - name: Install dependencies
         run: npm ci
 
       - name: Build static frontend
-        run: npm run build:hosting
+        shell: bash
+        run: |
+          set -a
+          source .env
+          set +a
+          npm run build:hosting
 
       - name: Deploy to Firebase Hosting
-        run: npx firebase-tools deploy --only hosting --project "$FIREBASE_PROJECT_ID" --token "$FIREBASE_TOKEN"
+        shell: bash
+        run: |
+          set -a
+          source .env
+          set +a
+          npx firebase-tools deploy --only hosting --project "$FIREBASE_PROJECT_ID" --token "$FIREBASE_TOKEN"

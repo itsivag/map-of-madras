@@ -3,5 +3,9 @@ node_modules/
 data/
 coverage/
 dist-pages/
+.next/
+out/
+.firebase/
+firebase-debug.log
 .DS_Store
 .env

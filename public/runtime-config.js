@@ -1,3 +1,1 @@
-window.CCM_CONFIG = window.CCM_CONFIG || {
-  apiBaseUrl: ''
-};
+window.CCM_CONFIG = Object.assign({}, window.CCM_CONFIG, { apiBaseUrl: "" });

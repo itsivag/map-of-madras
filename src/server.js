@@ -83,6 +83,7 @@ async function bootstrap() {
     geoService,
     semanticPipeline,
     publishThreshold: SEMANTIC_PUBLISH_THRESHOLD,
+    ingestCron: INGEST_CRON,
     pipelineMode: PIPELINE_MODE,
     maxItemsPerSource: INGEST_MAX_ITEMS_PER_SOURCE,
     sourceTimeBudgetMs: INGEST_SOURCE_TIME_BUDGET_MS,

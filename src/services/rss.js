@@ -605,7 +605,7 @@ export function createRssService({
       sourceName: source.name,
       sourceUrl: item.link,
       title: compactText(item.title || pageData.title || ''),
-      publishedAt: item.publishedAt || pageData.publishedAt || new Date().toISOString(),
+      publishedAt: item.publishedAt || pageData.publishedAt || null,
       content: compactText([fallbackContent, pageData.content].filter(Boolean).join(' '))
     };
   }
@@ -616,7 +616,7 @@ export function createRssService({
     return {
       sourceUrl: url,
       title: compactText(pageData.title || ''),
-      publishedAt: pageData.publishedAt || new Date().toISOString(),
+      publishedAt: pageData.publishedAt || null,
       content: compactText(pageData.content || '')
     };
   }

@@ -67,6 +67,129 @@ function withPromiseTimeout(promise, ms, label) {
   });
 }
 
+function parseTimestamp(value) {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function normalizeCronValue(rawValue, fallback) {
+  const value = Number(rawValue);
+  return Number.isInteger(value) ? value : fallback;
+}
+
+function matchesCronSegment(segment, value, { min, max, sundayAliases = false }) {
+  const [base, stepRaw] = segment.split('/');
+  const step = stepRaw ? Number(stepRaw) : 1;
+  if (!Number.isInteger(step) || step <= 0) {
+    return false;
+  }
+
+  const normalize = (input) => {
+    if (sundayAliases && input === 7) {
+      return 0;
+    }
+
+    return input;
+  };
+
+  let rangeStart = min;
+  let rangeEnd = max;
+
+  if (base && base !== '*') {
+    if (base.includes('-')) {
+      const [rawStart, rawEnd] = base.split('-').map((entry) => normalizeCronValue(entry, NaN));
+      rangeStart = normalize(rawStart);
+      rangeEnd = normalize(rawEnd);
+    } else {
+      const exactValue = normalize(normalizeCronValue(base, NaN));
+      return exactValue === normalize(value);
+    }
+  }
+
+  if (!Number.isInteger(rangeStart) || !Number.isInteger(rangeEnd)) {
+    return false;
+  }
+
+  if (rangeStart < min || rangeEnd > max || rangeStart > rangeEnd) {
+    return false;
+  }
+
+  const normalizedValue = normalize(value);
+  if (normalizedValue < rangeStart || normalizedValue > rangeEnd) {
+    return false;
+  }
+
+  return (normalizedValue - rangeStart) % step === 0;
+}
+
+function matchesCronField(field, value, options) {
+  return field
+    .split(',')
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .some((segment) => matchesCronSegment(segment, value, options));
+}
+
+function matchesCronExpression(expression, date) {
+  const parts = String(expression || '').trim().split(/\s+/);
+  if (parts.length !== 5) {
+    return false;
+  }
+
+  const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
+  return (
+    matchesCronField(minute, date.getUTCMinutes(), { min: 0, max: 59 }) &&
+    matchesCronField(hour, date.getUTCHours(), { min: 0, max: 23 }) &&
+    matchesCronField(dayOfMonth, date.getUTCDate(), { min: 1, max: 31 }) &&
+    matchesCronField(month, date.getUTCMonth() + 1, { min: 1, max: 12 }) &&
+    matchesCronField(dayOfWeek, date.getUTCDay(), { min: 0, max: 7, sundayAliases: true })
+  );
+}
+
+function getPreviousCronBoundary(cronExpression, referenceDate) {
+  const probe = new Date(referenceDate.getTime());
+  probe.setUTCSeconds(0, 0);
+  probe.setUTCMinutes(probe.getUTCMinutes() - 1);
+
+  for (let steps = 0; steps < 60 * 24 * 14; steps += 1) {
+    if (matchesCronExpression(cronExpression, probe)) {
+      return probe;
+    }
+
+    probe.setUTCMinutes(probe.getUTCMinutes() - 1);
+  }
+
+  const fallback = new Date(referenceDate.getTime());
+  fallback.setUTCHours(fallback.getUTCHours() - 1, 0, 0, 0);
+  return fallback;
+}
+
+function buildIngestionWindow(cronExpression, referenceDate) {
+  const to = new Date(referenceDate.getTime());
+  const from = getPreviousCronBoundary(cronExpression, referenceDate);
+  return {
+    from,
+    to
+  };
+}
+
+function shouldApplyIngestionWindow(trigger) {
+  return trigger === 'scheduler' || trigger === 'startup' || trigger === 'manual';
+}
+
+function isWithinIngestionWindow(value, window) {
+  const timestamp = parseTimestamp(value);
+  if (!timestamp || !window?.from || !window?.to) {
+    return false;
+  }
+
+  return timestamp.getTime() >= window.from.getTime() && timestamp.getTime() <= window.to.getTime();
+}
+
 export class IngestService {
   constructor({
     db,
@@ -75,6 +198,7 @@ export class IngestService {
     semanticPipeline = null,
     pipelineMode = 'semantic',
     publishThreshold = 0.8,
+    ingestCron = '0 * * * *',
     maxItemsPerSource = 6,
     sourceTimeBudgetMs = 90000,
     itemTimeoutMs = 20000,
@@ -86,6 +210,7 @@ export class IngestService {
     this.semanticPipeline = semanticPipeline;
     this.pipelineMode = pipelineMode === 'shadow' ? 'shadow' : 'semantic';
     this.publishThreshold = publishThreshold;
+    this.ingestCron = ingestCron;
     this.maxItemsPerSource = Number.isFinite(maxItemsPerSource) ? maxItemsPerSource : 6;
     this.sourceTimeBudgetMs = Number.isFinite(sourceTimeBudgetMs) ? sourceTimeBudgetMs : 90000;
     this.itemTimeoutMs = Number.isFinite(itemTimeoutMs) ? itemTimeoutMs : 20000;
@@ -584,8 +709,24 @@ export class IngestService {
     );
   }
 
-  async processItem({ source, item, runId }) {
+  async processItem({ source, item, runId, ingestionWindow = null }) {
     const article = await this.rssService.enrichItem(source, item);
+
+    if (ingestionWindow && !isWithinIngestionWindow(article.publishedAt, ingestionWindow)) {
+      return {
+        published: false,
+        article,
+        articleRow: null,
+        semanticResult: {
+          stage: 'window_filtered',
+          decision: 'skip',
+          rejectionReason: 'Article published outside the active ingestion window.',
+          incidentCandidate: null
+        },
+        windowFiltered: true
+      };
+    }
+
     const articleRow = this.upsertRawArticle({ source, article, runId });
 
     if (!this.semanticPipeline) {
@@ -680,13 +821,24 @@ export class IngestService {
   }
 
   async runIngestion({ trigger = 'manual' } = {}) {
-    const startedAt = new Date().toISOString();
+    const startedAtDate = new Date();
+    const startedAt = startedAtDate.toISOString();
+    const ingestionWindow = shouldApplyIngestionWindow(trigger)
+      ? buildIngestionWindow(this.ingestCron, startedAtDate)
+      : null;
     const runDetails = {
       trigger,
       pipelineMode: this.pipelineMode,
       semanticConfigured: this.isSemanticConfigured(),
       publishThreshold: this.publishThreshold,
+      ingestionWindow: ingestionWindow
+        ? {
+            from: ingestionWindow.from.toISOString(),
+            to: ingestionWindow.to.toISOString()
+          }
+        : null,
       limits: {
+        ingestCron: this.ingestCron,
         maxItemsPerSource: this.maxItemsPerSource,
         sourceTimeBudgetMs: this.sourceTimeBudgetMs,
         itemTimeoutMs: this.itemTimeoutMs,
@@ -748,17 +900,38 @@ export class IngestService {
         publishedCount: 0,
         rejectedCount: 0,
         skippedCount: 0,
+        windowSkippedCount: 0,
         errors: []
       };
 
       try {
         const discoveredItems = await this.rssService.fetchFeedItems(source);
         sourceDetail.discoveredCount = discoveredItems.length;
-        const items = discoveredItems.slice(0, this.maxItemsPerSource);
-        sourceDetail.fetchedCount = items.length;
-        sourceDetail.skippedCount = Math.max(0, discoveredItems.length - items.length);
+        const windowEligibleItems = discoveredItems.filter((item) => {
+          if (!ingestionWindow) {
+            return true;
+          }
 
-        if (sourceDetail.skippedCount > 0) {
+          if (!item?.publishedAt) {
+            return true;
+          }
+
+          return isWithinIngestionWindow(item.publishedAt, ingestionWindow);
+        });
+        sourceDetail.windowSkippedCount = Math.max(0, discoveredItems.length - windowEligibleItems.length);
+        const items = windowEligibleItems.slice(0, this.maxItemsPerSource);
+        sourceDetail.fetchedCount = items.length;
+        sourceDetail.skippedCount =
+          sourceDetail.windowSkippedCount + Math.max(0, windowEligibleItems.length - items.length);
+
+        if (sourceDetail.windowSkippedCount > 0) {
+          sourceDetail.errors.push({
+            stage: 'window',
+            message: `${sourceDetail.windowSkippedCount} items were outside the ingestion window.`
+          });
+        }
+
+        if (windowEligibleItems.length > items.length) {
           sourceDetail.errors.push({
             stage: 'limit',
             message: `Source capped at ${this.maxItemsPerSource} items for this run.`
@@ -779,16 +952,22 @@ export class IngestService {
 
           try {
             const result = await withPromiseTimeout(
-              this.processItem({ source, item, runId }),
+              this.processItem({ source, item, runId, ingestionWindow }),
               this.itemTimeoutMs,
               `Item processing for ${item.link || source.name}`
             );
-            sourceDetail.processedCount += 1;
+
+            if (result.windowFiltered) {
+              sourceDetail.windowSkippedCount += 1;
+              sourceDetail.skippedCount += 1;
+            } else {
+              sourceDetail.processedCount += 1;
+            }
 
             if (result.published) {
               publishedCount += 1;
               sourceDetail.publishedCount += 1;
-            } else if (result.semanticResult?.decision !== 'publish') {
+            } else if (!result.windowFiltered && result.semanticResult?.decision !== 'publish') {
               sourceDetail.rejectedCount += 1;
             }
           } catch (error) {

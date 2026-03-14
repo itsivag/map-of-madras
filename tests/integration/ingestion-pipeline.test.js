@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { initDatabase } from '../../src/db/init.js';
 import { IngestService } from '../../src/services/ingestService.js';
 import { buildDedupeKey } from '../../src/services/dedupe.js';
@@ -126,6 +126,246 @@ describe('ingestion pipeline', () => {
     expect(db.prepare('SELECT COUNT(*) AS count FROM incident_sources').get().count).toBe(1);
 
     db.close();
+  });
+
+  it('filters feed items to the current cron window before processing', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-13T09:30:00.000Z'));
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crime-map-window-test-'));
+    const dbPath = path.join(tempDir, 'window.sqlite');
+
+    const db = initDatabase(dbPath, [
+      {
+        id: 'fixture-source',
+        name: 'Fixture Source',
+        feedUrl: 'https://example.org/feed.xml',
+        websiteUrl: 'https://example.org',
+        enabled: true,
+        parserMode: 'rss'
+      }
+    ]);
+
+    const rssService = {
+      async fetchFeedItems() {
+        return [
+          {
+            title: 'Old incident',
+            link: 'https://example.org/old-story',
+            publishedAt: '2026-03-13T08:55:00.000Z',
+            feedSummary: '',
+            feedContent: ''
+          },
+          {
+            title: 'Current incident 1',
+            link: 'https://example.org/current-story-1',
+            publishedAt: '2026-03-13T09:05:00.000Z',
+            feedSummary: '',
+            feedContent: ''
+          },
+          {
+            title: 'Current incident 2',
+            link: 'https://example.org/current-story-2',
+            publishedAt: '2026-03-13T09:20:00.000Z',
+            feedSummary: '',
+            feedContent: ''
+          }
+        ];
+      },
+      async enrichItem(source, item) {
+        return {
+          sourceId: source.id,
+          sourceName: source.name,
+          sourceUrl: item.link,
+          title: item.title,
+          publishedAt: item.publishedAt,
+          content: item.title
+        };
+      }
+    };
+
+    const semanticPipeline = {
+      isConfigured() {
+        return true;
+      },
+      async analyzeArticle({ article }) {
+        const index = article.title.endsWith('2') ? 2 : 1;
+        return {
+          stage: 'ready_to_publish',
+          decision: 'publish',
+          extraction: {
+            category: 'fraud/scam'
+          },
+          incidentCandidate: {
+            dedupe: buildDedupeKey({
+              title: article.title,
+              category: 'fraud/scam',
+              subcategory: 'window-test',
+              occurredAt: article.publishedAt,
+              locality: `Chennai ${index}`,
+              lat: 13.08 + index * 0.05,
+              lng: 80.27 + index * 0.05
+            }),
+            category: 'fraud/scam',
+            subcategory: 'window-test',
+            occurredAt: article.publishedAt,
+            locality: `Chennai ${index}`,
+            lat: 13.08 + index * 0.05,
+            lng: 80.27 + index * 0.05,
+            confidence: 0.95,
+            sourceName: 'Fixture Source',
+            sourceUrl: article.sourceUrl,
+            sourceDomain: 'example.org',
+            title: article.title,
+            summary: 'Window filtered test incident.',
+            publishedAt: new Date().toISOString()
+          }
+        };
+      }
+    };
+
+    try {
+      const ingestService = new IngestService({
+        db,
+        rssService,
+        semanticPipeline,
+        pipelineMode: 'semantic',
+        publishThreshold: 0.8,
+        ingestCron: '0 * * * *',
+        maxItemsPerSource: 5
+      });
+
+      const result = await ingestService.runIngestion({ trigger: 'manual' });
+      const run = db.prepare('SELECT * FROM ingestion_runs ORDER BY id DESC LIMIT 1').get();
+      const details = JSON.parse(run.details_json);
+      const rawCount = db.prepare('SELECT COUNT(*) AS count FROM articles_raw').get().count;
+
+      expect(result.processedCount).toBe(2);
+      expect(result.publishedCount).toBe(2);
+      expect(details.ingestionWindow.from).toBe('2026-03-13T09:00:00.000Z');
+      expect(details.sources[0].windowSkippedCount).toBe(1);
+      expect(rawCount).toBe(2);
+    } finally {
+      db.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it('skips enriched articles that resolve outside the current cron window', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-13T09:30:00.000Z'));
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crime-map-window-enrich-test-'));
+    const dbPath = path.join(tempDir, 'window-enrich.sqlite');
+
+    const db = initDatabase(dbPath, [
+      {
+        id: 'fixture-source',
+        name: 'Fixture Source',
+        feedUrl: 'https://example.org/feed.xml',
+        websiteUrl: 'https://example.org',
+        enabled: true,
+        parserMode: 'rss'
+      }
+    ]);
+
+    const rssService = {
+      async fetchFeedItems() {
+        return [
+          {
+            title: 'Resolved old article',
+            link: 'https://example.org/old-story',
+            publishedAt: null,
+            feedSummary: '',
+            feedContent: ''
+          },
+          {
+            title: 'Resolved current article',
+            link: 'https://example.org/current-story',
+            publishedAt: null,
+            feedSummary: '',
+            feedContent: ''
+          }
+        ];
+      },
+      async enrichItem(source, item) {
+        return {
+          sourceId: source.id,
+          sourceName: source.name,
+          sourceUrl: item.link,
+          title: item.title,
+          publishedAt: item.link.includes('old')
+            ? '2026-03-13T08:40:00.000Z'
+            : '2026-03-13T09:10:00.000Z',
+          content: item.title
+        };
+      }
+    };
+
+    const semanticPipeline = {
+      isConfigured() {
+        return true;
+      },
+      async analyzeArticle({ article }) {
+        return {
+          stage: 'ready_to_publish',
+          decision: 'publish',
+          extraction: {
+            category: 'murder'
+          },
+          incidentCandidate: {
+            dedupe: buildDedupeKey({
+              title: article.title,
+              category: 'murder',
+              subcategory: 'window-test',
+              occurredAt: article.publishedAt,
+              locality: 'Chennai',
+              lat: 13.09,
+              lng: 80.28
+            }),
+            category: 'murder',
+            subcategory: 'window-test',
+            occurredAt: article.publishedAt,
+            locality: 'Chennai',
+            lat: 13.09,
+            lng: 80.28,
+            confidence: 0.95,
+            sourceName: 'Fixture Source',
+            sourceUrl: article.sourceUrl,
+            sourceDomain: 'example.org',
+            title: article.title,
+            summary: 'Window filtered enrich incident.',
+            publishedAt: new Date().toISOString()
+          }
+        };
+      }
+    };
+
+    try {
+      const ingestService = new IngestService({
+        db,
+        rssService,
+        semanticPipeline,
+        pipelineMode: 'semantic',
+        publishThreshold: 0.8,
+        ingestCron: '0 * * * *',
+        maxItemsPerSource: 5
+      });
+
+      const result = await ingestService.runIngestion({ trigger: 'manual' });
+      const rawCount = db.prepare('SELECT COUNT(*) AS count FROM articles_raw').get().count;
+      const details = JSON.parse(
+        db.prepare('SELECT details_json FROM ingestion_runs ORDER BY id DESC LIMIT 1').get().details_json
+      );
+
+      expect(result.processedCount).toBe(2);
+      expect(result.publishedCount).toBe(1);
+      expect(details.sources[0].windowSkippedCount).toBe(1);
+      expect(rawCount).toBe(1);
+    } finally {
+      db.close();
+      vi.useRealTimers();
+    }
   });
 
   it('merges duplicate incidents across outlets into one marker with multiple source rows', async () => {

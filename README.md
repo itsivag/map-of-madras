@@ -124,26 +124,22 @@ FRONTEND_API_BASE_URL=https://backend-production-a0f6.up.railway.app npm run dep
 
 ## GitHub Actions deployment
 
-The repo includes both deployment workflows:
+The repo includes:
 
 - frontend: [`.github/workflows/deploy-firebase-hosting.yml`](/Users/itsivag/AntigravityProjects/chennai-gbu-map/.github/workflows/deploy-firebase-hosting.yml)
-- backend: [`.github/workflows/deploy-backend-railway.yml`](/Users/itsivag/AntigravityProjects/chennai-gbu-map/.github/workflows/deploy-backend-railway.yml)
+- backend CI: [`.github/workflows/deploy-backend-railway.yml`](/Users/itsivag/AntigravityProjects/chennai-gbu-map/.github/workflows/deploy-backend-railway.yml)
 
 Configure these repository settings before using them:
 
 - Repository secret: `SECRETS_ENV`
   Paste the full backend/frontend `.env` file content here as a multiline secret.
 
-`SECRETS_ENV` should include everything needed by the workflows, including:
+`SECRETS_ENV` should include the frontend/runtime config needed by the workflows, including:
 
 ```env
 FRONTEND_API_BASE_URL=https://backend-production-a0f6.up.railway.app
 FIREBASE_PROJECT_ID=chennai-gbu-map
 FIREBASE_TOKEN=your-firebase-cli-token
-RAILWAY_PROJECT_ID=your-railway-project-id
-RAILWAY_ENVIRONMENT=production
-RAILWAY_SERVICE=backend
-RAILWAY_TOKEN=your-railway-token
 BROWSERLESS_API_KEY=your-browserless-token
 BROWSERLESS_BASE_URL=https://production-sfo.browserless.io
 AWS_BEARER_TOKEN_BEDROCK=your-bedrock-token
@@ -156,6 +152,8 @@ Generate `FIREBASE_TOKEN` locally with:
 ```bash
 firebase login:ci
 ```
+
+Backend deployment now happens through Railway's native GitHub repo integration. The existing backend GitHub workflow is CI-only (`npm test`) so pushes still get backend validation in GitHub, while Railway handles the actual backend deploy from the connected `itsivag/map-of-madras` repo.
 
 ## Important limitations
 

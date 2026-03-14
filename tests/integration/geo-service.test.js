@@ -1,6 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createGeoService } from '../../src/services/geo.js';
-import { loadBoundaryGeoJson, loadLocalities } from '../../src/config.js';
+import {
+  loadBoundaryGeoJson,
+  loadGreaterChennaiLocalities,
+  loadLocalities
+} from '../../src/config.js';
 
 describe('geo service', () => {
   it('geocodes in-boundary locality and rejects outside-boundary result', async () => {
@@ -48,6 +52,7 @@ describe('geo service', () => {
     const service = createGeoService({
       boundaryGeoJson: loadBoundaryGeoJson(),
       localities: loadLocalities(),
+      regionalLocalities: loadGreaterChennaiLocalities(),
       fetchImpl: fetchMock,
       userAgent: 'test-agent'
     });
@@ -95,6 +100,7 @@ describe('geo service', () => {
     const service = createGeoService({
       boundaryGeoJson: loadBoundaryGeoJson(),
       localities: loadLocalities(),
+      regionalLocalities: loadGreaterChennaiLocalities(),
       fetchImpl: fetchMock,
       userAgent: 'test-agent'
     });
@@ -106,5 +112,46 @@ describe('geo service', () => {
 
     expect(airport).toBeTruthy();
     expect(airport.locality).toBe('Chennai Airport');
+  });
+
+  it('accepts known greater Chennai localities just outside the strict boundary', async () => {
+    const fetchMock = vi.fn(async (url) => {
+      const query = new URL(url).searchParams.get('q') || '';
+
+      if (query.includes('Gummidipoondi')) {
+        return new Response(
+          JSON.stringify([
+            {
+              lat: '13.4500',
+              lon: '80.1200',
+              display_name: 'Gummidipoondi, Tiruvallur, Tamil Nadu, India'
+            }
+          ]),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    });
+
+    const service = createGeoService({
+      boundaryGeoJson: loadBoundaryGeoJson(),
+      localities: loadLocalities(),
+      regionalLocalities: loadGreaterChennaiLocalities(),
+      fetchImpl: fetchMock,
+      userAgent: 'test-agent'
+    });
+
+    const result = await service.extractAndGeocodeLocation({
+      title: '3 held after assault near Gummidipoondi',
+      content: 'Police said the crime happened near Gummidipoondi on Friday.'
+    });
+
+    expect(result).toBeTruthy();
+    expect(result.locality).toBe('Gummidipoondi');
+    expect(service.isPointInsideBoundary(result.lat, result.lng)).toBe(false);
   });
 });

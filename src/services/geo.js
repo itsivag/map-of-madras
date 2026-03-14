@@ -49,12 +49,29 @@ function computeBounds(boundaryGeoJson) {
   };
 }
 
+function expandBounds(bounds, marginDegrees) {
+  return {
+    minLng: bounds.minLng - marginDegrees,
+    minLat: bounds.minLat - marginDegrees,
+    maxLng: bounds.maxLng + marginDegrees,
+    maxLat: bounds.maxLat + marginDegrees,
+    leafletMaxBounds: [
+      [bounds.minLat - marginDegrees, bounds.minLng - marginDegrees],
+      [bounds.maxLat + marginDegrees, bounds.maxLng + marginDegrees]
+    ]
+  };
+}
+
 function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function normalizeLocality(locality) {
   return locality.replace(/\s+/g, ' ').trim();
+}
+
+function normalizeLocalityKey(locality) {
+  return normalizeLocality(locality).toLowerCase();
 }
 
 const INVALID_LOCALITY_PATTERNS = [
@@ -124,15 +141,61 @@ function extractLocalityFromPatterns(text) {
   return candidates;
 }
 
-export function createGeoService({ boundaryGeoJson, localities, fetchImpl = fetch, userAgent }) {
+export function createGeoService({
+  boundaryGeoJson,
+  localities,
+  regionalLocalities = [],
+  fetchImpl = fetch,
+  userAgent
+}) {
   const boundaryFeature = boundaryGeoJson.features[0];
-  const bounds = computeBounds(boundaryGeoJson);
+  const strictBounds = computeBounds(boundaryGeoJson);
+  const bounds = regionalLocalities.length > 0 ? expandBounds(strictBounds, 0.18) : strictBounds;
   const geocodeCache = new Map();
   const localitiesSorted = [...new Set(localities)].sort((a, b) => b.length - a.length);
+  const regionalLocalityKeys = new Set(regionalLocalities.map((locality) => normalizeLocalityKey(locality)));
 
   function isPointInsideBoundary(lat, lng) {
     const candidate = turfPoint([lng, lat]);
     return booleanPointInPolygon(candidate, boundaryFeature);
+  }
+
+  function isPointInsideRegionalBounds(lat, lng) {
+    return (
+      lat >= bounds.minLat &&
+      lat <= bounds.maxLat &&
+      lng >= bounds.minLng &&
+      lng <= bounds.maxLng
+    );
+  }
+
+  function isRegionalLocalityCandidate(value) {
+    if (!value) {
+      return false;
+    }
+
+    const normalized = normalizeLocalityKey(value);
+    for (const localityKey of regionalLocalityKeys) {
+      if (normalized.includes(localityKey) || localityKey.includes(normalized)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  function shouldAcceptGeocodeResult({ candidateLocality, lat, lng, displayName }) {
+    if (isPointInsideBoundary(lat, lng)) {
+      return true;
+    }
+
+    if (!isPointInsideRegionalBounds(lat, lng)) {
+      return false;
+    }
+
+    return (
+      isRegionalLocalityCandidate(candidateLocality) || isRegionalLocalityCandidate(displayName)
+    );
   }
 
   function buildLocalityQueries(locality) {
@@ -198,7 +261,7 @@ export function createGeoService({ boundaryGeoJson, localities, fetchImpl = fetc
           continue;
         }
 
-        if (!isPointInsideBoundary(lat, lng)) {
+        if (!shouldAcceptGeocodeResult({ candidateLocality, lat, lng, displayName: feature?.properties?.name || null })) {
           continue;
         }
 
@@ -241,7 +304,12 @@ export function createGeoService({ boundaryGeoJson, localities, fetchImpl = fetc
           continue;
         }
 
-        if (!isPointInsideBoundary(lat, lng)) {
+        if (!shouldAcceptGeocodeResult({
+          candidateLocality,
+          lat,
+          lng,
+          displayName: result.display_name || null
+        })) {
           continue;
         }
 
@@ -322,6 +390,7 @@ export function createGeoService({ boundaryGeoJson, localities, fetchImpl = fetc
 
   return {
     bounds,
+    strictBounds,
     boundaryGeoJson,
     isPointInsideBoundary,
     geocodeLocality,

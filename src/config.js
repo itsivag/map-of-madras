@@ -96,7 +96,13 @@ export function loadSourcesConfig() {
 }
 
 export function loadLocalities() {
-  return readJson(path.join(ROOT_DIR, 'config', 'chennai_localities.json'));
+  const localities = readJson(path.join(ROOT_DIR, 'config', 'chennai_localities.json'));
+  const regionalLocalities = loadGreaterChennaiLocalities();
+  return [...new Set([...localities, ...regionalLocalities])];
+}
+
+export function loadGreaterChennaiLocalities() {
+  return readJson(path.join(ROOT_DIR, 'config', 'greater_chennai_localities.json'));
 }
 
 export function loadBoundaryGeoJson() {

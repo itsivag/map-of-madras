@@ -28,6 +28,7 @@ import {
   QDRANT_TAXONOMY_COLLECTION,
   SEMANTIC_PROMPT_VERSION,
   loadBoundaryGeoJson,
+  loadGreaterChennaiLocalities,
   loadLocalities,
   loadSourcesConfig
 } from './config.js';
@@ -42,6 +43,7 @@ import { SemanticPipeline } from './services/semanticPipeline.js';
 
 async function bootstrap() {
   const sourceConfigs = loadSourcesConfig();
+  const greaterChennaiLocalities = loadGreaterChennaiLocalities();
   const localities = loadLocalities();
   const boundaryGeoJson = loadBoundaryGeoJson();
 
@@ -49,6 +51,7 @@ async function bootstrap() {
   const geoService = createGeoService({
     boundaryGeoJson,
     localities,
+    regionalLocalities: greaterChennaiLocalities,
     userAgent: USER_AGENT
   });
   const rssService = createRssService({

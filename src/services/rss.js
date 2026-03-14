@@ -148,12 +148,10 @@ function createBrowserlessClient({
         body: JSON.stringify({
           url,
           bestAttempt: true,
-          blockAds: true,
           gotoOptions: {
             timeout: timeoutMs,
             waitUntil: 'domcontentloaded'
-          },
-          rejectResourceTypes: ['font', 'image', 'media']
+          }
         })
       });
 

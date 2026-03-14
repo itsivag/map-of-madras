@@ -115,6 +115,27 @@ function markerPopup(incident) {
   `;
 }
 
+function formatLastUpdated(lastRun) {
+  if (!lastRun) {
+    return 'Unavailable';
+  }
+
+  const timestamp = lastRun.finished_at || lastRun.started_at;
+  if (!timestamp) {
+    return 'Unavailable';
+  }
+
+  return new Intl.DateTimeFormat('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'Asia/Kolkata'
+  }).format(new Date(timestamp));
+}
+
 export function CrimeMap() {
   const mapNodeRef = useRef(null);
   const mapRef = useRef(null);
@@ -130,6 +151,7 @@ export function CrimeMap() {
   const [timePreset, setTimePreset] = useState('30d');
   const [mapReady, setMapReady] = useState(false);
   const [statusText, setStatusText] = useState('Loading recent incidents');
+  const [lastUpdatedText, setLastUpdatedText] = useState('Checking latest ingest');
 
   function clearPinnedMarker() {
     if (!pinnedMarkerRef.current) {
@@ -402,6 +424,7 @@ export function CrimeMap() {
         const metaPayload = await fetchMeta();
         if (isActive) {
           applyChennaiBounds(metaPayload);
+          setLastUpdatedText(formatLastUpdated(metaPayload.lastRun));
         }
       } catch (error) {
         console.error('Primary metadata API failed, using fallback boundary:', error.message);
@@ -409,9 +432,13 @@ export function CrimeMap() {
           const fallbackMeta = await fetchFallbackJson('/fallback-meta.json');
           if (isActive) {
             applyChennaiBounds(fallbackMeta);
+            setLastUpdatedText('Fallback snapshot');
           }
         } catch (fallbackError) {
           console.error('Fallback metadata failed:', fallbackError.message);
+          if (isActive) {
+            setLastUpdatedText('Unavailable');
+          }
         }
       }
 
@@ -512,6 +539,7 @@ export function CrimeMap() {
           <span>90d</span>
         </div>
         <div className="status-pill">{statusText}</div>
+        <div className="time-widget__updated">Last updated: {lastUpdatedText}</div>
       </section>
     </section>
   );

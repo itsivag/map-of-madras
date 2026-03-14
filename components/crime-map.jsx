@@ -26,9 +26,9 @@ const CATEGORY_EMOJIS = {
 
 const TIME_PRESETS = [
   { id: '24h', label: 'Last 24 hours', hours: 24 },
+  { id: '2d', label: 'Last 2 days', hours: 24 * 2 },
   { id: '7d', label: 'Last 7 days', hours: 24 * 7 },
-  { id: '30d', label: 'Last 30 days', hours: 24 * 30 },
-  { id: '90d', label: 'Last 90 days', hours: 24 * 90 }
+  { id: '30d', label: 'Last 30 days', hours: 24 * 30 }
 ];
 
 const DEFAULT_META = {
@@ -540,9 +540,9 @@ export function CrimeMap() {
         />
         <div className="time-slider-scale" aria-hidden="true">
           <span>24h</span>
+          <span>2d</span>
           <span>7d</span>
           <span>30d</span>
-          <span>90d</span>
         </div>
         <div className="status-pill">{statusText}</div>
         <div className="time-widget__updated">Last updated: {lastUpdatedText}</div>

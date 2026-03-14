@@ -127,7 +127,7 @@ a {
 
 .map-disclaimer {
   position: fixed;
-  right: 20px;
+  left: 20px;
   bottom: 18px;
   z-index: 600;
   max-width: min(420px, calc(100vw - 40px));
@@ -223,7 +223,7 @@ a {
   }
 
   .map-disclaimer {
-    right: 12px;
+    left: 12px;
     bottom: 12px;
     max-width: calc(100vw - 24px);
   }

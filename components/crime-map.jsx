@@ -606,14 +606,14 @@ export function CrimeMap() {
           </div>
           <div className="incident-rail__filters" aria-label="Incident category filters">
             {categoryChips.map((chip) => (
-              <button
-                key={chip.id}
-                type="button"
-                className={`incident-rail__chip${selectedCategory === chip.id ? ' is-active' : ''}`}
-                onClick={() => setSelectedCategory(chip.id)}
+            <button
+              key={chip.id}
+              type="button"
+              className={`incident-rail__chip${selectedCategory === chip.id ? ' is-active' : ''}`}
+              onClick={() => setSelectedCategory(chip.id)}
+              aria-label={`${chip.label} incidents`}
             >
-              {chip.id !== 'all' ? <span>{CATEGORY_EMOJIS[chip.id] || CATEGORY_EMOJIS.other}</span> : null}
-              <span>{chip.label}</span>
+              {chip.id !== 'all' ? <span>{CATEGORY_EMOJIS[chip.id] || CATEGORY_EMOJIS.other}</span> : <span>{chip.label}</span>}
               <span>{chip.count}</span>
             </button>
           ))}

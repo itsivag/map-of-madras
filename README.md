@@ -4,7 +4,7 @@ Map of Madras is a Chennai-focused incident map that continuously ingests crime-
 
 Live deployment:
 
-- frontend: [https://chennai-gbu-map.web.app](https://chennai-gbu-map.web.app)
+- frontend: [https://mapofmadras.web.app](https://mapofmadras.web.app)
 - backend API: [https://backend-production-a0f6.up.railway.app](https://backend-production-a0f6.up.railway.app)
 
 The repo now has a split deployment model:
@@ -116,11 +116,10 @@ This writes the static export to `out/`.
 
 ```bash
 firebase login
-firebase use --add
 FRONTEND_API_BASE_URL=https://backend-production-a0f6.up.railway.app npm run deploy:hosting
 ```
 
-`firebase.json` is already configured to serve `out/`.
+`firebase.json` and [`.firebaserc`](/Users/itsivag/AntigravityProjects/chennai-gbu-map/.firebaserc) are configured to deploy `out/` to the `mapofmadras` Firebase Hosting site.
 
 ## GitHub Actions deployment
 

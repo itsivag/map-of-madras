@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   deploy:
@@ -37,15 +36,17 @@ jobs:
       - name: Build static frontend
         shell: bash
         run: |
-          set -a
-          source .env
-          set +a
+          FRONTEND_API_BASE_URL="$(sed -n 's/^FRONTEND_API_BASE_URL=//p' .env | head -n1)"
+          export FRONTEND_API_BASE_URL
           npm run build:hosting
 
       - name: Deploy to Firebase Hosting
         shell: bash
         run: |
-          set -a
-          source .env
-          set +a
+          FIREBASE_PROJECT_ID="$(sed -n 's/^FIREBASE_PROJECT_ID=//p' .env | head -n1)"
+          FIREBASE_TOKEN="$(sed -n 's/^FIREBASE_TOKEN=//p' .env | head -n1)"
           npx firebase-tools deploy --only hosting --project "$FIREBASE_PROJECT_ID" --token "$FIREBASE_TOKEN"
+
+      - name: Remove temporary .env
+        if: always()
+        run: rm -f .env

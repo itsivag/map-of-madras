@@ -1272,14 +1272,14 @@ export class IngestService {
 
     try {
       const queueDetail = await this.processQueuedSubmissions(runId);
-      runDetails.sources.push(queueDetail);
+      runDetails.submissionQueue = queueDetail;
       processedCount += queueDetail.processedCount;
       publishedCount += queueDetail.publishedCount;
       errorCount += queueDetail.errors.length;
       persistProgress();
     } catch (error) {
       errorCount += 1;
-      runDetails.sources.push({
+      runDetails.submissionQueue = {
         sourceId: 'submission-queue',
         name: 'Anonymous submission queue',
         discoveredCount: 0,
@@ -1294,7 +1294,7 @@ export class IngestService {
             message: error.message
           }
         ]
-      });
+      };
       persistProgress();
     }
 

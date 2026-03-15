@@ -252,10 +252,6 @@ export function CrimeMap() {
     if (typeof window === 'undefined') return false;
     return !window.matchMedia(SMALL_SCREEN_QUERY).matches;
   });
-  const [isDashboardOpen, setIsDashboardOpen] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return !window.matchMedia(SMALL_SCREEN_QUERY).matches;
-  });
   const [isDisclaimerOpen, setIsDisclaimerOpen] = useState(() => {
     if (typeof window === 'undefined') return false;
     return !window.matchMedia(SMALL_SCREEN_QUERY).matches;
@@ -288,15 +284,14 @@ export function CrimeMap() {
 
   useEffect(() => {
     setIsRailOpen(!isSmallScreen);
-    setIsDashboardOpen(!isSmallScreen);
     setIsDisclaimerOpen(!isSmallScreen);
   }, [isSmallScreen]);
 
   useEffect(() => {
-    if (!isDashboardOpen) {
-      setIsReportFormOpen(false);
+    if (!isReportFormOpen) {
+      return;
     }
-  }, [isDashboardOpen]);
+  }, [isReportFormOpen]);
 
   function clearPinnedMarker() {
     if (!pinnedMarkerRef.current) {
@@ -835,25 +830,10 @@ export function CrimeMap() {
               {currentPreset.label}
             </div>
             <div className="time-widget__topbar-actions">
-              {isSmallScreen ? (
-                <button
-                  type="button"
-                  className="time-widget__toggle"
-                  onClick={() => {
-                    setIsDashboardOpen((current) => !current);
-                    setReportNotice(null);
-                  }}
-                  aria-expanded={isDashboardOpen}
-                  aria-controls="dashboard-panel"
-                >
-                  {isDashboardOpen ? <ChevronUpIcon className="panel-toggle-icon" /> : <ChevronDownIcon className="panel-toggle-icon" />}
-                </button>
-              ) : null}
               <button
                 type="button"
                 className="report-trigger report-trigger--topbar"
                 onClick={() => {
-                  setIsDashboardOpen(true);
                   setIsReportFormOpen(true);
                   setReportNotice(null);
                 }}
@@ -864,7 +844,7 @@ export function CrimeMap() {
               </button>
             </div>
           </div>
-          <div className="time-widget__panel" id="dashboard-panel" hidden={isSmallScreen && !isDashboardOpen}>
+          <div className="time-widget__panel" id="dashboard-panel">
             <input
               id="time-slider"
               className="time-slider"
@@ -983,25 +963,6 @@ export function CrimeMap() {
             ) : null}
           </div>
         </section>
-        <div className="map-disclaimer">
-          {isSmallScreen ? (
-            <div className="map-disclaimer__header">
-              <strong>Notice</strong>
-              <button
-                type="button"
-                className="map-disclaimer__toggle"
-                onClick={() => setIsDisclaimerOpen((current) => !current)}
-                aria-expanded={isDisclaimerOpen}
-                aria-controls="map-disclaimer-panel"
-              >
-                {isDisclaimerOpen ? <ChevronUpIcon className="panel-toggle-icon" /> : <ChevronDownIcon className="panel-toggle-icon" />}
-              </button>
-            </div>
-          ) : null}
-          <div id="map-disclaimer-panel" hidden={isSmallScreen && !isDisclaimerOpen}>
-            {disclaimerText}
-          </div>
-        </div>
         <aside
           className={`incident-rail${isSmallScreen ? ' is-small-screen' : ''}${isRailOpen ? ' is-open' : ''}`}
           aria-label="Incident list"
@@ -1080,6 +1041,25 @@ export function CrimeMap() {
             </div>
           </div>
         </aside>
+        <div className="map-disclaimer">
+          {isSmallScreen ? (
+            <div className="map-disclaimer__header">
+              <strong>Notice</strong>
+              <button
+                type="button"
+                className="map-disclaimer__toggle"
+                onClick={() => setIsDisclaimerOpen((current) => !current)}
+                aria-expanded={isDisclaimerOpen}
+                aria-controls="map-disclaimer-panel"
+              >
+                {isDisclaimerOpen ? <ChevronUpIcon className="panel-toggle-icon" /> : <ChevronDownIcon className="panel-toggle-icon" />}
+              </button>
+            </div>
+          ) : null}
+          <div id="map-disclaimer-panel" hidden={isSmallScreen && !isDisclaimerOpen}>
+            {disclaimerText}
+          </div>
+        </div>
       </div>
     </section>
   );

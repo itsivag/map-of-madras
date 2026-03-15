@@ -600,9 +600,17 @@ a {
     max-height: calc(100dvh - max(24px, env(safe-area-inset-top) + env(safe-area-inset-bottom)));
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
     gap: 10px;
     pointer-events: none;
+  }
+
+  .map-sidebar .incident-rail,
+  .map-sidebar .map-disclaimer {
+    margin-top: auto;
+  }
+
+  .map-sidebar .map-disclaimer {
+    margin-top: 0;
   }
 
   .time-widget {
@@ -710,7 +718,6 @@ a {
   }
 
   .incident-rail {
-    margin-top: auto;
     border-radius: 16px;
     background: rgba(0, 0, 0, 0.88);
     box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);

@@ -46,6 +46,7 @@ a {
 .map-stage {
   position: relative;
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 #map {
@@ -53,6 +54,7 @@ a {
   inset: 0;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   background:
     radial-gradient(circle at center, rgba(154, 18, 29, 0.3), transparent 46%),
     linear-gradient(180deg, #270206, #090001 75%);
@@ -66,8 +68,12 @@ a {
   width: min(320px, calc(100vw - 40px));
   max-height: calc(100vh - 40px);
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 12px;
+}
+
+.map-sidebar > * {
+  pointer-events: auto;
 }
 
 .time-widget {
@@ -172,6 +178,12 @@ a {
   color: #ffffff;
 }
 
+.incident-rail__header-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .incident-rail__header strong {
   font-size: 0.95rem;
   letter-spacing: 0.04em;
@@ -183,10 +195,18 @@ a {
   font-size: 0.78rem;
 }
 
+.incident-rail__panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
 .incident-rail__filters {
   display: flex;
   gap: 8px;
   padding: 10px 12px 0;
+  flex-shrink: 0;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -225,6 +245,7 @@ a {
 }
 
 .incident-rail__list {
+  min-height: 0;
   overflow-y: auto;
   padding: 8px;
 }
@@ -288,6 +309,21 @@ a {
   padding: 16px;
   color: rgba(255, 255, 255, 0.62);
   font-size: 0.82rem;
+}
+
+.incident-rail__toggle {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  padding: 7px 11px;
+  font-size: 0.74rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.incident-rail__toggle:hover {
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .crime-emoji-icon {
@@ -364,22 +400,115 @@ a {
 }
 
 @media (max-width: 720px) {
-  .map-sidebar {
-    top: auto;
-    right: 12px;
-    bottom: 68px;
-    left: 12px;
-    width: auto;
-    max-height: calc(100vh - 92px);
+  .map-stage,
+  .app-shell {
+    min-height: 100dvh;
   }
 
-  .incident-rail {
-    max-height: min(34vh, 280px);
+  .map-sidebar {
+    top: max(12px, env(safe-area-inset-top));
+    right: 12px;
+    left: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    width: auto;
+    max-height: calc(100dvh - max(24px, env(safe-area-inset-top) + env(safe-area-inset-bottom)));
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 10px;
+    pointer-events: none;
+  }
+
+  .time-widget {
+    padding: 12px;
+    border-radius: 14px;
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+  }
+
+  .time-widget__label {
+    font-size: 0.72rem;
+  }
+
+  .time-slider-scale {
+    gap: 6px;
+    margin-top: 6px;
+    font-size: 0.72rem;
+  }
+
+  .status-pill {
+    margin-top: 8px;
+    padding: 5px 9px;
+    font-size: 0.7rem;
+  }
+
+  .time-widget__updated {
+    margin-top: 8px;
+    font-size: 0.7rem;
   }
 
   .map-disclaimer {
-    left: 12px;
-    bottom: 12px;
-    max-width: calc(100vw - 24px);
+    position: static;
+    max-width: none;
+    padding: 8px 10px;
+    border-radius: 10px;
+    font-size: 0.68rem;
+    line-height: 1.35;
+    box-shadow: none;
+  }
+
+  .incident-rail {
+    margin-top: auto;
+    border-radius: 16px;
+    background: rgba(0, 0, 0, 0.88);
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+  }
+
+  .incident-rail__header {
+    padding: 12px 14px;
+  }
+
+  .incident-rail__header strong {
+    font-size: 0.86rem;
+  }
+
+  .incident-rail.is-small-screen .incident-rail__panel {
+    max-height: min(48vh, 360px);
+  }
+
+  .incident-rail__filters {
+    gap: 7px;
+    padding: 8px 10px 0;
+  }
+
+  .incident-rail__chip {
+    padding: 7px 9px;
+    gap: 6px;
+    font-size: 0.78rem;
+  }
+
+  .incident-rail__list {
+    padding: 6px;
+  }
+
+  .incident-rail__item {
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .incident-rail__title {
+    font-size: 0.84rem;
+  }
+
+  .incident-rail__meta {
+    font-size: 0.72rem;
+  }
+
+  .incident-rail__empty {
+    padding: 14px;
+    font-size: 0.76rem;
+  }
+
+  .leaflet-control-zoom {
+    margin-top: 84px;
   }
 }

@@ -1,5 +1,5 @@
 {
-  "disclaimer": "Markers are derived from news reports and may contain errors. This is not an official police record.",
+  "disclaimer": "Markers are derived from AI-processed news reports and may contain errors. This is not an official police record.",
   "boundary": {
     "maxBounds": [[12.86, 79.85], [13.42, 80.41]],
     "bbox": {

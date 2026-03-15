@@ -31,9 +31,11 @@ const TIME_PRESETS = [
   { id: '30d', label: 'Last 30 days', hours: 24 * 30 }
 ];
 
+const SMALL_SCREEN_QUERY = '(max-width: 720px)';
+
 const DEFAULT_META = {
   disclaimer:
-    'Markers are fetched and filtered by AI from news reports and may contain errors. This is not an official police record.',
+    'Markers are derived from AI-processed news reports and may contain errors. This is not an official police record.',
   boundary: {
     maxBounds: [
       [12.86, 79.85],
@@ -168,6 +170,33 @@ export function CrimeMap() {
   const [allIncidents, setAllIncidents] = useState([]);
   const [activeIncidentId, setActiveIncidentId] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [isSmallScreen, setIsSmallScreen] = useState(false);
+  const [isRailOpen, setIsRailOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const mediaQuery = window.matchMedia(SMALL_SCREEN_QUERY);
+    const syncViewport = (event) => {
+      setIsSmallScreen(event.matches);
+    };
+
+    syncViewport(mediaQuery);
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', syncViewport);
+      return () => mediaQuery.removeEventListener('change', syncViewport);
+    }
+
+    mediaQuery.addListener(syncViewport);
+    return () => mediaQuery.removeListener(syncViewport);
+  }, []);
+
+  useEffect(() => {
+    setIsRailOpen(!isSmallScreen);
+  }, [isSmallScreen]);
 
   function clearPinnedMarker() {
     if (!pinnedMarkerRef.current) {
@@ -259,6 +288,9 @@ export function CrimeMap() {
 
         pinnedMarkerRef.current = marker;
         setActiveIncidentId(incident.id);
+        if (isSmallScreen) {
+          setIsRailOpen(false);
+        }
         marker.openPopup();
       });
 
@@ -290,7 +322,10 @@ export function CrimeMap() {
     const currentZoom = map.getZoom();
     const point = map.project(markerLatLng, currentZoom);
     const panelWidth = listPanelRef.current?.clientWidth || 0;
-    const targetCenter = map.unproject([point.x + panelWidth * 0.4, point.y], currentZoom);
+    const panelHeight = listPanelRef.current?.clientHeight || 0;
+    const targetCenter = isSmallScreen
+      ? map.unproject([point.x, point.y + panelHeight * (isRailOpen ? 0.34 : 0.18)], currentZoom)
+      : map.unproject([point.x + panelWidth * 0.4, point.y], currentZoom);
     const nextZoom = Math.max(currentZoom, Math.min(Math.max(baseZoomRef.current + 1, 12), 14));
 
     if (pinnedMarkerRef.current && pinnedMarkerRef.current !== marker) {
@@ -350,9 +385,23 @@ export function CrimeMap() {
       return;
     }
 
+    const panelWidth = listPanelRef.current?.clientWidth || 0;
+    const panelHeight = listPanelRef.current?.clientHeight || 0;
+    const fitBoundsPadding = isSmallScreen
+      ? {
+          paddingTopLeft: [18, 92],
+          paddingBottomRight: [18, Math.max(panelHeight + (isRailOpen ? 28 : 18), 110)],
+          animate: false
+        }
+      : {
+          paddingTopLeft: [36, 36],
+          paddingBottomRight: [Math.max(panelWidth + 28, 48), 36],
+          animate: false
+        };
+
     if (!incidentsRef.current.length) {
       if (maxBoundsRef.current) {
-        map.fitBounds(maxBoundsRef.current, { padding: [18, 18], animate: false });
+        map.fitBounds(maxBoundsRef.current, fitBoundsPadding);
       }
       return;
     }
@@ -363,14 +412,18 @@ export function CrimeMap() {
     const zoomForIncidents = Math.min(Math.max(baseZoomRef.current + 1, 12), 14);
 
     if (incidentsRef.current.length === 1) {
-      map.setView(markerBounds.getCenter(), zoomForIncidents, { animate: false });
+      const centerPoint = map.project(markerBounds.getCenter(), zoomForIncidents);
+      const centeredView = isSmallScreen
+        ? map.unproject([centerPoint.x, centerPoint.y + panelHeight * (isRailOpen ? 0.24 : 0.12)], zoomForIncidents)
+        : map.unproject([centerPoint.x + panelWidth * 0.22, centerPoint.y], zoomForIncidents);
+
+      map.setView(centeredView, zoomForIncidents, { animate: false });
       return;
     }
 
     map.fitBounds(markerBounds, {
-      padding: [48, 48],
-      maxZoom: zoomForIncidents,
-      animate: false
+      ...fitBoundsPadding,
+      maxZoom: zoomForIncidents
     });
   }
 
@@ -590,7 +643,20 @@ export function CrimeMap() {
     renderIncidents(filteredIncidents);
     focusIncidents();
     setStatusText(`${filteredIncidents.length} incidents mapped`);
-  }, [mapReady, allIncidents, selectedCategory]);
+  }, [allIncidents, isRailOpen, isSmallScreen, mapReady, selectedCategory]);
+
+  useEffect(() => {
+    if (!mapReady) {
+      return;
+    }
+
+    if (activeIncidentId && markerByIncidentIdRef.current.has(activeIncidentId)) {
+      focusIncidentById(activeIncidentId);
+      return;
+    }
+
+    focusIncidents();
+  }, [activeIncidentId, isRailOpen, isSmallScreen, mapReady]);
 
   const currentPreset = getPreset(timePreset);
   const sliderIndex = TIME_PRESETS.findIndex((preset) => preset.id === currentPreset.id);
@@ -607,58 +673,6 @@ export function CrimeMap() {
     <section className="map-stage" aria-label="Map of Chennai incidents">
       <div id="map" ref={mapNodeRef} />
       <div className="map-sidebar">
-        <aside className="incident-rail" aria-label="Incident list" ref={listPanelRef}>
-          <div className="incident-rail__header">
-            <strong>Incidents</strong>
-            <span>{filteredIncidents.length}</span>
-          </div>
-          <div className="incident-rail__filters" aria-label="Incident category filters">
-            {categoryChips.map((chip) => (
-            <button
-              key={chip.id}
-              type="button"
-              className={`incident-rail__chip${selectedCategory === chip.id ? ' is-active' : ''}`}
-              onClick={() => setSelectedCategory(chip.id)}
-              aria-label={`${chip.label} incidents`}
-            >
-              {chip.id !== 'all' ? <span>{CATEGORY_EMOJIS[chip.id] || CATEGORY_EMOJIS.other}</span> : <span>{chip.label}</span>}
-              <span>{chip.count}</span>
-            </button>
-          ))}
-          </div>
-          <div className="incident-rail__list">
-            {filteredIncidents.length ? (
-              filteredIncidents.map((incident) => (
-                <button
-                  key={incident.id}
-                  type="button"
-                  className={`incident-rail__item${activeIncidentId === incident.id ? ' is-active' : ''}`}
-                  onClick={() => focusIncidentById(incident.id)}
-                >
-                  <span
-                    className="incident-rail__dot"
-                    style={{ backgroundColor: CATEGORY_COLORS[incident.category] || CATEGORY_COLORS.other }}
-                    aria-hidden="true"
-                  />
-                  <span className="incident-rail__body">
-                  <span className="incident-rail__title">
-                    {getIncidentHeadline(incident)}
-                  </span>
-                    <span className="incident-rail__meta">
-                      {(incident.locality || 'Unknown locality') +
-                        ' · ' +
-                        (incident.category || 'other') +
-                        ' · ' +
-                        formatIncidentDate(incident)}
-                    </span>
-                  </span>
-                </button>
-              ))
-            ) : (
-              <div className="incident-rail__empty">No incidents for this filter.</div>
-            )}
-          </div>
-        </aside>
         <section className="time-widget" aria-label="Time range filter">
           <div className="time-widget__label" id="time-range-label">
             {currentPreset.label}
@@ -686,8 +700,86 @@ export function CrimeMap() {
           <div className="status-pill">{statusText}</div>
           <div className="time-widget__updated">Last updated: {lastUpdatedText}</div>
         </section>
+        <div className="map-disclaimer">{disclaimerText}</div>
+        <aside
+          className={`incident-rail${isSmallScreen ? ' is-small-screen' : ''}${isRailOpen ? ' is-open' : ''}`}
+          aria-label="Incident list"
+          ref={listPanelRef}
+        >
+          <div className="incident-rail__header">
+            <strong>Incidents</strong>
+            <div className="incident-rail__header-meta">
+              <span>{filteredIncidents.length}</span>
+              {isSmallScreen ? (
+                <button
+                  type="button"
+                  className="incident-rail__toggle"
+                  onClick={() => setIsRailOpen((current) => !current)}
+                  aria-expanded={isRailOpen}
+                  aria-controls="incident-list-panel"
+                >
+                  {isRailOpen ? 'Hide list' : 'Show list'}
+                </button>
+              ) : null}
+            </div>
+          </div>
+          <div className="incident-rail__panel" id="incident-list-panel" hidden={isSmallScreen && !isRailOpen}>
+            <div className="incident-rail__filters" aria-label="Incident category filters">
+              {categoryChips.map((chip) => (
+                <button
+                  key={chip.id}
+                  type="button"
+                  className={`incident-rail__chip${selectedCategory === chip.id ? ' is-active' : ''}`}
+                  onClick={() => setSelectedCategory(chip.id)}
+                  aria-label={`${chip.label} incidents`}
+                >
+                  {chip.id !== 'all' ? (
+                    <span>{CATEGORY_EMOJIS[chip.id] || CATEGORY_EMOJIS.other}</span>
+                  ) : (
+                    <span>{chip.label}</span>
+                  )}
+                  <span>{chip.count}</span>
+                </button>
+              ))}
+            </div>
+            <div className="incident-rail__list">
+              {filteredIncidents.length ? (
+                filteredIncidents.map((incident) => (
+                  <button
+                    key={incident.id}
+                    type="button"
+                    className={`incident-rail__item${activeIncidentId === incident.id ? ' is-active' : ''}`}
+                    onClick={() => {
+                      focusIncidentById(incident.id);
+                      if (isSmallScreen) {
+                        setIsRailOpen(false);
+                      }
+                    }}
+                  >
+                    <span
+                      className="incident-rail__dot"
+                      style={{ backgroundColor: CATEGORY_COLORS[incident.category] || CATEGORY_COLORS.other }}
+                      aria-hidden="true"
+                    />
+                    <span className="incident-rail__body">
+                      <span className="incident-rail__title">{getIncidentHeadline(incident)}</span>
+                      <span className="incident-rail__meta">
+                        {(incident.locality || 'Unknown locality') +
+                          ' · ' +
+                          (incident.category || 'other') +
+                          ' · ' +
+                          formatIncidentDate(incident)}
+                      </span>
+                    </span>
+                  </button>
+                ))
+              ) : (
+                <div className="incident-rail__empty">No incidents for this filter.</div>
+              )}
+            </div>
+          </div>
+        </aside>
       </div>
-      <div className="map-disclaimer">{disclaimerText}</div>
     </section>
   );
 }

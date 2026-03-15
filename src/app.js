@@ -561,7 +561,7 @@ export function createApp({
 
     res.json({
       disclaimer:
-        'Markers are derived from news reports and may contain errors. This is not an official police record.',
+        'Markers are derived from AI-processed news reports and may contain errors. This is not an official police record.',
       lastRun,
       categoryCounts,
       sourceHealth,

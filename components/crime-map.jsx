@@ -245,6 +245,7 @@ export function CrimeMap() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [isSmallScreen, setIsSmallScreen] = useState(false);
   const [isRailOpen, setIsRailOpen] = useState(false);
+  const [isDashboardOpen, setIsDashboardOpen] = useState(false);
   const [isReportFormOpen, setIsReportFormOpen] = useState(false);
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
   const [reportForm, setReportForm] = useState(EMPTY_REPORT_FORM);
@@ -273,7 +274,14 @@ export function CrimeMap() {
 
   useEffect(() => {
     setIsRailOpen(!isSmallScreen);
+    setIsDashboardOpen(!isSmallScreen);
   }, [isSmallScreen]);
+
+  useEffect(() => {
+    if (!isDashboardOpen) {
+      setIsReportFormOpen(false);
+    }
+  }, [isDashboardOpen]);
 
   function clearPinnedMarker() {
     if (!pinnedMarkerRef.current) {
@@ -807,141 +815,162 @@ export function CrimeMap() {
       <div id="map" ref={mapNodeRef} />
       <div className="map-sidebar">
         <section className="time-widget" aria-label="Time range filter">
-          <div className="time-widget__label" id="time-range-label">
-            {currentPreset.label}
-          </div>
-          <input
-            id="time-slider"
-            className="time-slider"
-            type="range"
-            min="0"
-            max="3"
-            step="1"
-            value={sliderIndex === -1 ? 2 : sliderIndex}
-            aria-label="Time range slider"
-            onChange={(event) => {
-              const nextPreset = TIME_PRESETS[Number(event.target.value)] || TIME_PRESETS[2];
-              setTimePreset(nextPreset.id);
-            }}
-          />
-          <div className="time-slider-scale" aria-hidden="true">
-            <span>24h</span>
-            <span>2d</span>
-            <span>7d</span>
-            <span>30d</span>
-          </div>
-          <div className="status-pill">{statusText}</div>
-          <div className="time-widget__updated">Last updated: {lastUpdatedText}</div>
-          <div className="time-widget__actions">
-            <button
-              type="button"
-              className="report-trigger"
-              onClick={() => {
-                setIsReportFormOpen((current) => !current);
-                setReportNotice(null);
-              }}
-              aria-expanded={isReportFormOpen}
-              aria-controls="report-panel"
-            >
-              Add incident
-            </button>
-          </div>
-          {reportNotice ? (
-            <div className={`report-notice report-notice--${reportNotice.tone}`}>{reportNotice.text}</div>
-          ) : null}
-          {isReportFormOpen ? (
-            <form className="report-panel" id="report-panel" onSubmit={submitIncidentReport}>
-              <div className="report-panel__intro">
-                Anonymous reports are queued and processed during the next ingestion run.
-              </div>
-              <label className="report-field">
-                <span>Category</span>
-                <select
-                  value={reportForm.category}
-                  onChange={(event) =>
-                    setReportForm((current) => ({ ...current, category: event.target.value }))
-                  }
-                >
-                  {REPORT_CATEGORY_OPTIONS.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="report-field">
-                <span>Locality</span>
-                <input
-                  type="text"
-                  value={reportForm.locality}
-                  onChange={(event) =>
-                    setReportForm((current) => ({ ...current, locality: event.target.value }))
-                  }
-                  placeholder="Eg. Velachery bus stand"
-                  required
-                />
-              </label>
-              <label className="report-field">
-                <span>When did it happen?</span>
-                <input
-                  type="datetime-local"
-                  value={reportForm.occurredAt}
-                  onChange={(event) =>
-                    setReportForm((current) => ({ ...current, occurredAt: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="report-field">
-                <span>Supporting link (optional)</span>
-                <input
-                  type="url"
-                  value={reportForm.sourceUrl}
-                  onChange={(event) =>
-                    setReportForm((current) => ({ ...current, sourceUrl: event.target.value }))
-                  }
-                  placeholder="https://..."
-                />
-              </label>
-              <label className="report-field">
-                <span>What happened?</span>
-                <textarea
-                  value={reportForm.description}
-                  onChange={(event) =>
-                    setReportForm((current) => ({ ...current, description: event.target.value }))
-                  }
-                  placeholder="Share the incident details in one or two sentences."
-                  rows="4"
-                  required
-                />
-              </label>
-              <label className="report-field report-field--trap" aria-hidden="true" tabIndex="-1">
-                <span>Website</span>
-                <input
-                  type="text"
-                  autoComplete="off"
-                  value={reportForm.website}
-                  onChange={(event) =>
-                    setReportForm((current) => ({ ...current, website: event.target.value }))
-                  }
-                  tabIndex="-1"
-                />
-              </label>
-              <div className="report-panel__actions">
-                <button type="submit" className="report-submit" disabled={isSubmittingReport}>
-                  {isSubmittingReport ? 'Queueing...' : 'Queue for next run'}
-                </button>
+          <div className="time-widget__topbar">
+            <div className="time-widget__label" id="time-range-label">
+              {currentPreset.label}
+            </div>
+            <div className="time-widget__topbar-actions">
+              {isSmallScreen ? (
                 <button
                   type="button"
-                  className="report-cancel"
-                  onClick={() => setIsReportFormOpen(false)}
+                  className="time-widget__toggle"
+                  onClick={() => {
+                    setIsDashboardOpen((current) => !current);
+                    setReportNotice(null);
+                  }}
+                  aria-expanded={isDashboardOpen}
+                  aria-controls="dashboard-panel"
                 >
-                  Cancel
+                  {isDashboardOpen ? 'Hide dashboard' : 'Show dashboard'}
                 </button>
-              </div>
-            </form>
-          ) : null}
+              ) : null}
+              <button
+                type="button"
+                className="report-trigger report-trigger--topbar"
+                onClick={() => {
+                  setIsDashboardOpen(true);
+                  setIsReportFormOpen(true);
+                  setReportNotice(null);
+                }}
+                aria-expanded={isReportFormOpen}
+                aria-controls="report-panel"
+              >
+                Add incident
+              </button>
+            </div>
+          </div>
+          <div className="time-widget__panel" id="dashboard-panel" hidden={isSmallScreen && !isDashboardOpen}>
+            <input
+              id="time-slider"
+              className="time-slider"
+              type="range"
+              min="0"
+              max="3"
+              step="1"
+              value={sliderIndex === -1 ? 2 : sliderIndex}
+              aria-label="Time range slider"
+              onChange={(event) => {
+                const nextPreset = TIME_PRESETS[Number(event.target.value)] || TIME_PRESETS[2];
+                setTimePreset(nextPreset.id);
+              }}
+            />
+            <div className="time-slider-scale" aria-hidden="true">
+              <span>24h</span>
+              <span>2d</span>
+              <span>7d</span>
+              <span>30d</span>
+            </div>
+            <div className="status-pill">{statusText}</div>
+            <div className="time-widget__updated">Last updated: {lastUpdatedText}</div>
+            {reportNotice ? (
+              <div className={`report-notice report-notice--${reportNotice.tone}`}>{reportNotice.text}</div>
+            ) : null}
+            {isReportFormOpen ? (
+              <form className="report-panel" id="report-panel" onSubmit={submitIncidentReport}>
+                <div className="report-panel__intro">
+                  Anonymous reports are queued and processed during the next ingestion run.
+                </div>
+                <label className="report-field">
+                  <span>Category</span>
+                  <select
+                    value={reportForm.category}
+                    onChange={(event) =>
+                      setReportForm((current) => ({ ...current, category: event.target.value }))
+                    }
+                  >
+                    {REPORT_CATEGORY_OPTIONS.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="report-field">
+                  <span>Locality</span>
+                  <input
+                    type="text"
+                    value={reportForm.locality}
+                    onChange={(event) =>
+                      setReportForm((current) => ({ ...current, locality: event.target.value }))
+                    }
+                    placeholder="Eg. Velachery bus stand"
+                    required
+                  />
+                </label>
+                <label className="report-field">
+                  <span>When did it happen?</span>
+                  <input
+                    type="datetime-local"
+                    value={reportForm.occurredAt}
+                    onChange={(event) =>
+                      setReportForm((current) => ({ ...current, occurredAt: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="report-field">
+                  <span>Supporting link (optional)</span>
+                  <input
+                    type="url"
+                    value={reportForm.sourceUrl}
+                    onChange={(event) =>
+                      setReportForm((current) => ({ ...current, sourceUrl: event.target.value }))
+                    }
+                    placeholder="https://..."
+                  />
+                </label>
+                <label className="report-field">
+                  <span>What happened?</span>
+                  <textarea
+                    value={reportForm.description}
+                    onChange={(event) =>
+                      setReportForm((current) => ({ ...current, description: event.target.value }))
+                    }
+                    placeholder="Share the incident details in one or two sentences."
+                    rows="4"
+                    required
+                  />
+                </label>
+                <label className="report-field report-field--trap" aria-hidden="true" tabIndex="-1">
+                  <span>Website</span>
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    value={reportForm.website}
+                    onChange={(event) =>
+                      setReportForm((current) => ({ ...current, website: event.target.value }))
+                    }
+                    tabIndex="-1"
+                  />
+                </label>
+                <div className="report-panel__actions">
+                  <button type="submit" className="report-submit" disabled={isSubmittingReport}>
+                    {isSubmittingReport ? 'Queueing...' : 'Queue for next run'}
+                  </button>
+                  <button
+                    type="button"
+                    className="report-cancel"
+                    onClick={() => setIsReportFormOpen(false)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            ) : null}
+          </div>
         </section>
-        <div className="map-disclaimer">{disclaimerText}</div>
+        <div className="map-disclaimer" hidden={isSmallScreen && !isDashboardOpen}>
+          {disclaimerText}
+        </div>
         <aside
           className={`incident-rail${isSmallScreen ? ' is-small-screen' : ''}${isRailOpen ? ' is-open' : ''}`}
           aria-label="Incident list"

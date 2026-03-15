@@ -1,7 +1,8 @@
 import {
   buildArticleContentHash,
   canonicalizeArticleUrl,
-  getSourceDomain
+  getSourceDomain,
+  hashContent
 } from './articleUtils.js';
 import {
   buildSourceFingerprint,
@@ -242,6 +243,55 @@ const CRIME_HINT_PATTERNS = [
   /\battack(?:ed)?\b/i,
   /\bstabbed\b/i
 ];
+
+const COMMUNITY_SOURCE_NAME = 'Anonymous community report';
+const SUBMISSION_QUEUE_BATCH_SIZE = 12;
+const SUBMISSION_RATE_LIMIT_WINDOW_HOURS = 6;
+const SUBMISSION_RATE_LIMIT_MAX = 3;
+const SUBMISSION_CATEGORY_SET = new Set([
+  'murder',
+  'rape',
+  'assault',
+  'robbery/theft',
+  'kidnapping',
+  'fraud/scam',
+  'drug offense',
+  'other'
+]);
+
+function normalizeSubmissionText(value = '') {
+  return String(value).replace(/\s+/g, ' ').trim();
+}
+
+function buildSubmissionFingerprint({ category, locality, occurredAt, description, sourceUrl }) {
+  const occurredDate = toIsoOrNull(occurredAt)?.slice(0, 10) || 'unknown-date';
+  return hashContent(
+    [
+      category,
+      normalizeSubmissionText(locality).toLowerCase(),
+      occurredDate,
+      normalizeSubmissionText(description).toLowerCase(),
+      canonicalizeArticleUrl(sourceUrl || '')
+    ].join('|')
+  );
+}
+
+function buildSubmissionSourceUrl(queueId) {
+  return `https://user-report.local/submissions/${queueId}`;
+}
+
+function buildSubmissionTitle({ category, locality, description }) {
+  const compactDescription = normalizeSubmissionText(description);
+  const summary = compactDescription.slice(0, 90).replace(/[.!?]\s.*$/, '');
+  const where = normalizeSubmissionText(locality) || 'Chennai';
+  return summary || `${category} report near ${where}`;
+}
+
+function summarizeSubmissionIncident({ category, locality, occurredAt }) {
+  const dateLabel = occurredAt ? occurredAt.slice(0, 10) : 'unknown date';
+  const where = locality ? `near ${locality}` : 'in Chennai';
+  return `Anonymous community report for ${category} incident ${where} on ${dateLabel}. Verify independently.`;
+}
 
 function isLikelyCrimeFeedItem(item) {
   const haystack = [item?.title, item?.feedSummary, item?.feedContent]
@@ -540,6 +590,64 @@ export class IngestService {
         updated_at = datetime('now')
     `);
 
+    this.selectSubmissionByFingerprint = db.prepare(`
+      SELECT id, status
+      FROM submission_queue
+      WHERE submission_fingerprint = ?
+      LIMIT 1
+    `);
+
+    this.countRecentReporterSubmissions = db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM submission_queue
+      WHERE reporter_hash = ?
+        AND datetime(created_at) >= datetime(?)
+    `);
+
+    this.insertSubmissionQueue = db.prepare(`
+      INSERT INTO submission_queue (
+        reporter_hash,
+        submission_fingerprint,
+        category,
+        locality,
+        occurred_at,
+        description,
+        source_url,
+        status,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', datetime('now'))
+    `);
+
+    this.selectQueuedSubmissions = db.prepare(`
+      SELECT
+        id,
+        reporter_hash,
+        submission_fingerprint,
+        category,
+        locality,
+        occurred_at,
+        description,
+        source_url,
+        status,
+        created_at
+      FROM submission_queue
+      WHERE status = 'queued'
+      ORDER BY datetime(created_at) ASC, id ASC
+      LIMIT ?
+    `);
+
+    this.updateSubmissionQueueState = db.prepare(`
+      UPDATE submission_queue
+      SET
+        status = ?,
+        processed_incident_id = ?,
+        last_error = ?,
+        run_id = ?,
+        processed_at = ?,
+        updated_at = datetime('now')
+      WHERE id = ?
+    `);
+
     this.markSourceSuccess = db.prepare(`
       UPDATE sources
       SET
@@ -787,6 +895,216 @@ export class IngestService {
     );
   }
 
+  queueIncidentSubmission({
+    reporterHash,
+    category,
+    locality,
+    occurredAt = null,
+    description,
+    sourceUrl = ''
+  }) {
+    const normalizedReporterHash = normalizeSubmissionText(reporterHash);
+    const normalizedCategory = SUBMISSION_CATEGORY_SET.has(category) ? category : 'other';
+    const normalizedLocality = normalizeSubmissionText(locality).slice(0, 160);
+    const normalizedDescription = normalizeSubmissionText(description).slice(0, 2000);
+    const normalizedSourceUrl = canonicalizeArticleUrl(sourceUrl || '');
+    const occurredAtIso = toIsoOrNull(occurredAt);
+
+    if (!normalizedReporterHash) {
+      throw new Error('Missing anonymous reporter token.');
+    }
+
+    if (!normalizedLocality || normalizedLocality.length < 3) {
+      throw new Error('Locality must be at least 3 characters.');
+    }
+
+    if (!normalizedDescription || normalizedDescription.length < 24) {
+      throw new Error('Description must be at least 24 characters.');
+    }
+
+    const submissionFingerprint = buildSubmissionFingerprint({
+      category: normalizedCategory,
+      locality: normalizedLocality,
+      occurredAt: occurredAtIso,
+      description: normalizedDescription,
+      sourceUrl: normalizedSourceUrl
+    });
+    const existing = this.selectSubmissionByFingerprint.get(submissionFingerprint);
+
+    if (existing) {
+      return {
+        queued: false,
+        status: 'duplicate',
+        queueId: existing.id
+      };
+    }
+
+    const windowStart = new Date(
+      Date.now() - SUBMISSION_RATE_LIMIT_WINDOW_HOURS * 60 * 60 * 1000
+    ).toISOString();
+    const recentCount = Number(
+      this.countRecentReporterSubmissions.get(normalizedReporterHash, windowStart)?.count || 0
+    );
+
+    if (recentCount >= SUBMISSION_RATE_LIMIT_MAX) {
+      return {
+        queued: false,
+        status: 'rate_limited',
+        retryAfterHours: SUBMISSION_RATE_LIMIT_WINDOW_HOURS
+      };
+    }
+
+    const result = this.insertSubmissionQueue.run(
+      normalizedReporterHash,
+      submissionFingerprint,
+      normalizedCategory,
+      normalizedLocality,
+      occurredAtIso,
+      normalizedDescription,
+      normalizedSourceUrl || null
+    );
+
+    return {
+      queued: true,
+      status: 'queued',
+      queueId: Number(result.lastInsertRowid)
+    };
+  }
+
+  async processQueuedSubmissions(runId) {
+    const queueDetail = {
+      sourceId: 'submission-queue',
+      name: 'Anonymous submission queue',
+      discoveredCount: 0,
+      fetchedCount: 0,
+      processedCount: 0,
+      publishedCount: 0,
+      rejectedCount: 0,
+      skippedCount: 0,
+      errors: []
+    };
+
+    const queuedSubmissions = this.selectQueuedSubmissions.all(SUBMISSION_QUEUE_BATCH_SIZE);
+    queueDetail.discoveredCount = queuedSubmissions.length;
+    queueDetail.fetchedCount = queuedSubmissions.length;
+
+    if (!queuedSubmissions.length) {
+      return queueDetail;
+    }
+
+    if (!this.geoService) {
+      queueDetail.errors.push({
+        stage: 'queue',
+        message: 'Geo service is not configured for queued submissions.'
+      });
+
+      for (const submission of queuedSubmissions) {
+        this.updateSubmissionQueueState.run(
+          'error',
+          null,
+          'Geo service unavailable.',
+          runId,
+          new Date().toISOString(),
+          submission.id
+        );
+      }
+
+      return queueDetail;
+    }
+
+    for (const submission of queuedSubmissions) {
+      try {
+        queueDetail.processedCount += 1;
+        const geocoded = await this.geoService.geocodeLocality(submission.locality);
+
+        if (!geocoded) {
+          queueDetail.rejectedCount += 1;
+          this.updateSubmissionQueueState.run(
+            'rejected',
+            null,
+            'Unable to geocode the submitted locality inside Chennai.',
+            runId,
+            new Date().toISOString(),
+            submission.id
+          );
+          continue;
+        }
+
+        const sourceUrl = submission.source_url || buildSubmissionSourceUrl(submission.id);
+        const occurredAt = submission.occurred_at || submission.created_at || new Date().toISOString();
+        const title = buildSubmissionTitle({
+          category: submission.category,
+          locality: submission.locality,
+          description: submission.description
+        });
+        const candidate = {
+          dedupe: buildDedupeKey({
+            category: submission.category,
+            subcategory: 'community report',
+            title,
+            occurredAt,
+            locality: geocoded.locality,
+            lat: geocoded.lat,
+            lng: geocoded.lng
+          }),
+          category: submission.category,
+          subcategory: 'community report',
+          occurredAt,
+          locality: geocoded.locality,
+          lat: geocoded.lat,
+          lng: geocoded.lng,
+          confidence: 0.35,
+          sourceName: COMMUNITY_SOURCE_NAME,
+          sourceUrl,
+          sourceDomain: getSourceDomain(sourceUrl),
+          title,
+          summary: summarizeSubmissionIncident({
+            category: submission.category,
+            locality: geocoded.locality,
+            occurredAt
+          }),
+          publishedAt: new Date().toISOString()
+        };
+        const canonicalSourceUrl = canonicalizeArticleUrl(candidate.sourceUrl);
+        const sourceFingerprint = buildSourceFingerprint({
+          sourceUrl: canonicalSourceUrl,
+          title: candidate.title
+        });
+        const mergeTarget = this.findMergeTarget(candidate);
+        const directTarget = this.selectIncidentByDedupe.get(candidate.dedupe.key);
+        const published = this.publishIncident(candidate);
+        const linkedIncident = this.selectIncidentSourceByFingerprint.get(sourceFingerprint);
+
+        queueDetail.publishedCount += published ? 1 : 0;
+
+        this.updateSubmissionQueueState.run(
+          mergeTarget || directTarget || linkedIncident ? 'accepted' : 'accepted',
+          linkedIncident?.incident_id || mergeTarget?.id || directTarget?.id || null,
+          null,
+          runId,
+          new Date().toISOString(),
+          submission.id
+        );
+      } catch (error) {
+        queueDetail.errors.push({
+          stage: 'queue-item',
+          submissionId: submission.id,
+          message: error.message
+        });
+        this.updateSubmissionQueueState.run(
+          'error',
+          null,
+          error.message.slice(0, 1000),
+          runId,
+          new Date().toISOString(),
+          submission.id
+        );
+      }
+    }
+
+    return queueDetail;
+  }
+
   async processItem({ source, item, runId, ingestionWindow = null }) {
     const article = await this.rssService.enrichItem(source, item);
 
@@ -951,6 +1269,34 @@ export class IngestService {
         runId
       );
     };
+
+    try {
+      const queueDetail = await this.processQueuedSubmissions(runId);
+      runDetails.sources.push(queueDetail);
+      processedCount += queueDetail.processedCount;
+      publishedCount += queueDetail.publishedCount;
+      errorCount += queueDetail.errors.length;
+      persistProgress();
+    } catch (error) {
+      errorCount += 1;
+      runDetails.sources.push({
+        sourceId: 'submission-queue',
+        name: 'Anonymous submission queue',
+        discoveredCount: 0,
+        fetchedCount: 0,
+        processedCount: 0,
+        publishedCount: 0,
+        rejectedCount: 0,
+        skippedCount: 0,
+        errors: [
+          {
+            stage: 'queue',
+            message: error.message
+          }
+        ]
+      });
+      persistProgress();
+    }
 
     for (const source of sources) {
       if (Date.now() - Date.parse(startedAt) >= this.runTimeBudgetMs) {

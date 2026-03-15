@@ -1,8 +1,19 @@
 import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 
 const EVIDENCE_SUPPORT_ORDER = ['offense', 'location', 'time', 'context'];
+const SUBMISSION_CATEGORY_SET = new Set([
+  'murder',
+  'rape',
+  'assault',
+  'robbery/theft',
+  'kidnapping',
+  'fraud/scam',
+  'drug offense',
+  'other'
+]);
 
 function parseLimit(rawLimit) {
   const parsed = Number(rawLimit || 500);
@@ -63,6 +74,59 @@ function normalizeAllowedOrigins(value) {
     .split(',')
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+function normalizeSubmissionField(value, maxLength = 2000) {
+  return String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+}
+
+function createAnonymousReporterHash(req) {
+  const forwardedFor = String(req.headers['x-forwarded-for'] || '')
+    .split(',')[0]
+    .trim();
+  const remoteAddress = normalizeSubmissionField(
+    forwardedFor || req.socket?.remoteAddress || req.ip || '',
+    200
+  );
+  const userAgent = normalizeSubmissionField(req.headers['user-agent'] || '', 300);
+  const dayBucket = new Date().toISOString().slice(0, 10);
+
+  return createHash('sha256')
+    .update(`${dayBucket}|${remoteAddress}|${userAgent}|anonymous-submission-v1`)
+    .digest('hex');
+}
+
+function validateSubmissionPayload(body) {
+  const category = SUBMISSION_CATEGORY_SET.has(body?.category) ? body.category : 'other';
+  const locality = normalizeSubmissionField(body?.locality, 160);
+  const description = normalizeSubmissionField(body?.description, 2000);
+  const sourceUrl = normalizeSubmissionField(body?.sourceUrl, 400);
+  const honeypot = normalizeSubmissionField(body?.website, 120);
+  const occurredAt = body?.occurredAt ? new Date(body.occurredAt) : null;
+
+  if (!locality || locality.length < 3) {
+    return { error: 'Locality must be at least 3 characters.' };
+  }
+
+  if (!description || description.length < 24) {
+    return { error: 'Description must be at least 24 characters.' };
+  }
+
+  if (occurredAt && Number.isNaN(occurredAt.getTime())) {
+    return { error: 'Occurred-at timestamp is invalid.' };
+  }
+
+  return {
+    category,
+    locality,
+    description,
+    sourceUrl,
+    honeypot,
+    occurredAt: occurredAt ? occurredAt.toISOString() : null
+  };
 }
 
 function mapIncidentRow(row) {
@@ -581,6 +645,59 @@ export function createApp({
           maxLat: geoService.bounds.maxLat
         }
       }
+    });
+  });
+
+  app.post('/api/reports', (req, res) => {
+    if (typeof ingestService?.queueIncidentSubmission !== 'function') {
+      res.status(503).json({ error: 'Anonymous report queue is unavailable.' });
+      return;
+    }
+
+    const payload = validateSubmissionPayload(req.body);
+    if (payload.error) {
+      res.status(400).json({ error: payload.error });
+      return;
+    }
+
+    if (payload.honeypot) {
+      res.status(202).json({
+        status: 'queued',
+        message: 'Report queued for the next ingestion run.'
+      });
+      return;
+    }
+
+    const result = ingestService.queueIncidentSubmission({
+      reporterHash: createAnonymousReporterHash(req),
+      category: payload.category,
+      locality: payload.locality,
+      occurredAt: payload.occurredAt,
+      description: payload.description,
+      sourceUrl: payload.sourceUrl
+    });
+
+    if (result.status === 'rate_limited') {
+      res.status(429).json({
+        status: 'rate_limited',
+        message: 'Too many anonymous reports from this device recently. Try again later.',
+        retryAfterHours: result.retryAfterHours
+      });
+      return;
+    }
+
+    if (result.status === 'duplicate') {
+      res.status(200).json({
+        status: 'duplicate',
+        message: 'A similar report is already queued.'
+      });
+      return;
+    }
+
+    res.status(202).json({
+      status: 'queued',
+      queueId: result.queueId,
+      message: 'Report queued for the next ingestion run.'
     });
   });
 

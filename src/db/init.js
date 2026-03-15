@@ -112,6 +112,26 @@ CREATE TABLE IF NOT EXISTS incident_sources (
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY(incident_id) REFERENCES incidents(id)
 );
+
+CREATE TABLE IF NOT EXISTS submission_queue (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  reporter_hash TEXT NOT NULL,
+  submission_fingerprint TEXT NOT NULL UNIQUE,
+  category TEXT NOT NULL,
+  locality TEXT NOT NULL,
+  occurred_at TEXT,
+  description TEXT NOT NULL,
+  source_url TEXT,
+  status TEXT NOT NULL DEFAULT 'queued',
+  processed_incident_id INTEGER,
+  last_error TEXT,
+  run_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  processed_at TEXT,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY(processed_incident_id) REFERENCES incidents(id),
+  FOREIGN KEY(run_id) REFERENCES ingestion_runs(id)
+);
 `;
 
 const INDEX_SQL = `
@@ -125,6 +145,8 @@ CREATE INDEX IF NOT EXISTS idx_article_chunks_article_id ON article_chunks(artic
 CREATE UNIQUE INDEX IF NOT EXISTS idx_article_chunks_article_chunk ON article_chunks(article_id, chunk_index);
 CREATE INDEX IF NOT EXISTS idx_semantic_extractions_article_id ON semantic_extractions(article_id);
 CREATE INDEX IF NOT EXISTS idx_incident_sources_incident_id ON incident_sources(incident_id);
+CREATE INDEX IF NOT EXISTS idx_submission_queue_status_created ON submission_queue(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_submission_queue_reporter_hash_created ON submission_queue(reporter_hash, created_at);
 `;
 
 const ARTICLE_RAW_COLUMNS = [

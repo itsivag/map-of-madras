@@ -10,6 +10,7 @@ import { ROOT_DIR, loadBoundaryGeoJson } from '../../src/config.js';
 describe('API endpoints', () => {
   let db;
   let app;
+  let queuedReports;
 
   beforeEach(() => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crime-map-api-'));
@@ -192,6 +193,7 @@ describe('API endpoints', () => {
       null
     );
 
+    queuedReports = [];
     const geoService = {
       bounds: {
         minLng: 79.85,
@@ -210,6 +212,10 @@ describe('API endpoints', () => {
       pipelineMode: 'semantic',
       isSemanticConfigured() {
         return true;
+      },
+      queueIncidentSubmission(payload) {
+        queuedReports.push(payload);
+        return { queued: true, status: 'queued', queueId: 101 + queuedReports.length };
       },
       async runIngestion() {
         return { status: 'success', processedCount: 0, publishedCount: 0 };
@@ -278,6 +284,78 @@ describe('API endpoints', () => {
     expect(response.body.pipeline.mode).toBe('semantic');
     expect(response.body.pipeline.semanticConfigured).toBe(true);
     expect(response.body.officialSources).toBeUndefined();
+  });
+
+  it('queues anonymous incident submissions for the next ingestion run', async () => {
+    const response = await request(app).post('/api/reports').send({
+      category: 'assault',
+      locality: 'Velachery',
+      occurredAt: new Date().toISOString(),
+      description: 'Two people reported an assault near the bus stand late in the evening.',
+      sourceUrl: 'https://example.org/local-report'
+    });
+
+    expect(response.status).toBe(202);
+    expect(response.body.status).toBe('queued');
+    expect(queuedReports).toHaveLength(1);
+    expect(queuedReports[0].category).toBe('assault');
+    expect(queuedReports[0].locality).toBe('Velachery');
+    expect(queuedReports[0].reporterHash).toBeTruthy();
+  });
+
+  it('returns duplicate and rate-limit responses from the submission queue', async () => {
+    const queueApp = createApp({
+      db,
+      ingestService: {
+        pipelineMode: 'semantic',
+        isSemanticConfigured() {
+          return true;
+        },
+        queueIncidentSubmission(payload) {
+          if (payload.locality === 'Adyar') {
+            return { queued: false, status: 'duplicate', queueId: 55 };
+          }
+
+          return { queued: false, status: 'rate_limited', retryAfterHours: 6 };
+        },
+        async runIngestion() {
+          return { status: 'success', processedCount: 0, publishedCount: 0 };
+        },
+        async debugArticleByUrl(url) {
+          return { url, decision: 'publish' };
+        }
+      },
+      geoService: {
+        bounds: {
+          minLng: 79.85,
+          minLat: 12.86,
+          maxLng: 80.41,
+          maxLat: 13.42,
+          leafletMaxBounds: [
+            [12.86, 79.85],
+            [13.42, 80.41]
+          ]
+        },
+        boundaryGeoJson: loadBoundaryGeoJson()
+      },
+      rootDir: ROOT_DIR
+    });
+
+    const duplicate = await request(queueApp).post('/api/reports').send({
+      category: 'other',
+      locality: 'Adyar',
+      description: 'Repeated report for the same incident already present in the queue.'
+    });
+    expect(duplicate.status).toBe(200);
+    expect(duplicate.body.status).toBe('duplicate');
+
+    const limited = await request(queueApp).post('/api/reports').send({
+      category: 'other',
+      locality: 'Tambaram',
+      description: 'A separate anonymous report that exceeds the current rate limit window.'
+    });
+    expect(limited.status).toBe(429);
+    expect(limited.body.status).toBe('rate_limited');
   });
 
   it('returns semantic debug output for a provided article URL', async () => {

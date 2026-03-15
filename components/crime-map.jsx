@@ -32,6 +32,24 @@ const TIME_PRESETS = [
 ];
 
 const SMALL_SCREEN_QUERY = '(max-width: 720px)';
+const REPORT_CATEGORY_OPTIONS = [
+  { id: 'other', label: 'Other' },
+  { id: 'assault', label: 'Assault' },
+  { id: 'robbery/theft', label: 'Robbery / Theft' },
+  { id: 'fraud/scam', label: 'Fraud / Scam' },
+  { id: 'drug offense', label: 'Drug offense' },
+  { id: 'kidnapping', label: 'Kidnapping' },
+  { id: 'rape', label: 'Sexual assault / Rape' },
+  { id: 'murder', label: 'Murder' }
+];
+const EMPTY_REPORT_FORM = {
+  category: 'other',
+  locality: '',
+  occurredAt: '',
+  sourceUrl: '',
+  description: '',
+  website: ''
+};
 
 const DEFAULT_META = {
   disclaimer:
@@ -148,6 +166,61 @@ function getIncidentHeadline(incident) {
   );
 }
 
+function coordinateKey(lat, lng) {
+  return `${Number(lat).toFixed(5)}:${Number(lng).toFixed(5)}`;
+}
+
+function spreadMarkerPositions(incidents) {
+  const groups = new Map();
+
+  for (const incident of incidents) {
+    const key = coordinateKey(incident.lat, incident.lng);
+    const existing = groups.get(key) || [];
+    existing.push(incident);
+    groups.set(key, existing);
+  }
+
+  const positionedIncidents = new Map();
+
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      const [incident] = group;
+      positionedIncidents.set(incident.id, {
+        markerLat: incident.lat,
+        markerLng: incident.lng
+      });
+      continue;
+    }
+
+    const ringSize = 8;
+    const sortedGroup = [...group].sort((left, right) => Number(left.id) - Number(right.id));
+
+    sortedGroup.forEach((incident, index) => {
+      const ringIndex = Math.floor(index / ringSize);
+      const itemsInRing = Math.min(ringSize, sortedGroup.length - ringIndex * ringSize);
+      const slotIndex = index % ringSize;
+      const angle = (2 * Math.PI * slotIndex) / itemsInRing;
+      const radius = 0.0012 + ringIndex * 0.0009;
+      const latValue = Number(incident.lat);
+      const lngValue = Number(incident.lng);
+      const lngScale = Math.max(Math.cos((latValue * Math.PI) / 180), 0.35);
+
+      positionedIncidents.set(incident.id, {
+        markerLat: latValue + radius * Math.sin(angle),
+        markerLng: lngValue + (radius * Math.cos(angle)) / lngScale
+      });
+    });
+  }
+
+  return incidents.map((incident) => ({
+    ...incident,
+    ...(positionedIncidents.get(incident.id) || {
+      markerLat: incident.lat,
+      markerLng: incident.lng
+    })
+  }));
+}
+
 export function CrimeMap() {
   const mapNodeRef = useRef(null);
   const mapRef = useRef(null);
@@ -172,6 +245,10 @@ export function CrimeMap() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [isSmallScreen, setIsSmallScreen] = useState(false);
   const [isRailOpen, setIsRailOpen] = useState(false);
+  const [isReportFormOpen, setIsReportFormOpen] = useState(false);
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [reportForm, setReportForm] = useState(EMPTY_REPORT_FORM);
+  const [reportNotice, setReportNotice] = useState(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -236,9 +313,10 @@ export function CrimeMap() {
     markerLayer.clearLayers();
     markerByIncidentIdRef.current = new Map();
     pinnedMarkerRef.current = null;
+    const displayIncidents = spreadMarkerPositions(incidents);
 
-    for (const incident of incidents) {
-      const marker = L.marker([incident.lat, incident.lng], {
+    for (const incident of displayIncidents) {
+      const marker = L.marker([incident.markerLat, incident.markerLng], {
         icon: buildEmojiIcon(incident),
         keyboard: true,
         riseOnHover: true
@@ -304,7 +382,7 @@ export function CrimeMap() {
       markerLayer.addLayer(marker);
     }
 
-    incidentsRef.current = incidents;
+    incidentsRef.current = displayIncidents;
     setActiveIncidentId((current) =>
       incidents.some((incident) => incident.id === current) ? current : incidents[0]?.id ?? null
     );
@@ -407,7 +485,7 @@ export function CrimeMap() {
     }
 
     const markerBounds = L.latLngBounds(
-      incidentsRef.current.map((incident) => [incident.lat, incident.lng])
+      incidentsRef.current.map((incident) => [incident.markerLat || incident.lat, incident.markerLng || incident.lng])
     );
     const zoomForIncidents = Math.min(Math.max(baseZoomRef.current + 1, 12), 14);
 
@@ -669,6 +747,61 @@ export function CrimeMap() {
     }))
   ];
 
+  async function submitIncidentReport(event) {
+    event.preventDefault();
+    setIsSubmittingReport(true);
+    setReportNotice(null);
+
+    try {
+      const response = await fetch(buildApiUrl('/api/reports'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          ...reportForm,
+          occurredAt: reportForm.occurredAt ? new Date(reportForm.occurredAt).toISOString() : null
+        })
+      });
+      const payload = await response.json().catch(() => ({}));
+
+      if (response.status === 202 && payload.status === 'queued') {
+        setReportForm(EMPTY_REPORT_FORM);
+        setIsReportFormOpen(false);
+        setReportNotice({
+          tone: 'success',
+          text: payload.message || 'Report queued for the next ingestion run.'
+        });
+        return;
+      }
+
+      if (payload.status === 'duplicate') {
+        setReportNotice({
+          tone: 'muted',
+          text: payload.message || 'A similar report is already queued.'
+        });
+        return;
+      }
+
+      if (payload.status === 'rate_limited') {
+        setReportNotice({
+          tone: 'error',
+          text: payload.message || 'Too many recent anonymous reports from this device.'
+        });
+        return;
+      }
+
+      throw new Error(payload.error || payload.message || 'Unable to queue report.');
+    } catch (error) {
+      setReportNotice({
+        tone: 'error',
+        text: error.message || 'Unable to queue report.'
+      });
+    } finally {
+      setIsSubmittingReport(false);
+    }
+  }
+
   return (
     <section className="map-stage" aria-label="Map of Chennai incidents">
       <div id="map" ref={mapNodeRef} />
@@ -699,6 +832,114 @@ export function CrimeMap() {
           </div>
           <div className="status-pill">{statusText}</div>
           <div className="time-widget__updated">Last updated: {lastUpdatedText}</div>
+          <div className="time-widget__actions">
+            <button
+              type="button"
+              className="report-trigger"
+              onClick={() => {
+                setIsReportFormOpen((current) => !current);
+                setReportNotice(null);
+              }}
+              aria-expanded={isReportFormOpen}
+              aria-controls="report-panel"
+            >
+              Add incident
+            </button>
+          </div>
+          {reportNotice ? (
+            <div className={`report-notice report-notice--${reportNotice.tone}`}>{reportNotice.text}</div>
+          ) : null}
+          {isReportFormOpen ? (
+            <form className="report-panel" id="report-panel" onSubmit={submitIncidentReport}>
+              <div className="report-panel__intro">
+                Anonymous reports are queued and processed during the next ingestion run.
+              </div>
+              <label className="report-field">
+                <span>Category</span>
+                <select
+                  value={reportForm.category}
+                  onChange={(event) =>
+                    setReportForm((current) => ({ ...current, category: event.target.value }))
+                  }
+                >
+                  {REPORT_CATEGORY_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="report-field">
+                <span>Locality</span>
+                <input
+                  type="text"
+                  value={reportForm.locality}
+                  onChange={(event) =>
+                    setReportForm((current) => ({ ...current, locality: event.target.value }))
+                  }
+                  placeholder="Eg. Velachery bus stand"
+                  required
+                />
+              </label>
+              <label className="report-field">
+                <span>When did it happen?</span>
+                <input
+                  type="datetime-local"
+                  value={reportForm.occurredAt}
+                  onChange={(event) =>
+                    setReportForm((current) => ({ ...current, occurredAt: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="report-field">
+                <span>Supporting link (optional)</span>
+                <input
+                  type="url"
+                  value={reportForm.sourceUrl}
+                  onChange={(event) =>
+                    setReportForm((current) => ({ ...current, sourceUrl: event.target.value }))
+                  }
+                  placeholder="https://..."
+                />
+              </label>
+              <label className="report-field">
+                <span>What happened?</span>
+                <textarea
+                  value={reportForm.description}
+                  onChange={(event) =>
+                    setReportForm((current) => ({ ...current, description: event.target.value }))
+                  }
+                  placeholder="Share the incident details in one or two sentences."
+                  rows="4"
+                  required
+                />
+              </label>
+              <label className="report-field report-field--trap" aria-hidden="true" tabIndex="-1">
+                <span>Website</span>
+                <input
+                  type="text"
+                  autoComplete="off"
+                  value={reportForm.website}
+                  onChange={(event) =>
+                    setReportForm((current) => ({ ...current, website: event.target.value }))
+                  }
+                  tabIndex="-1"
+                />
+              </label>
+              <div className="report-panel__actions">
+                <button type="submit" className="report-submit" disabled={isSubmittingReport}>
+                  {isSubmittingReport ? 'Queueing...' : 'Queue for next run'}
+                </button>
+                <button
+                  type="button"
+                  className="report-cancel"
+                  onClick={() => setIsReportFormOpen(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          ) : null}
         </section>
         <div className="map-disclaimer">{disclaimerText}</div>
         <aside

@@ -243,9 +243,22 @@ export function CrimeMap() {
   const [allIncidents, setAllIncidents] = useState([]);
   const [activeIncidentId, setActiveIncidentId] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [isSmallScreen, setIsSmallScreen] = useState(false);
-  const [isRailOpen, setIsRailOpen] = useState(false);
-  const [isDashboardOpen, setIsDashboardOpen] = useState(false);
+  const [isSmallScreen, setIsSmallScreen] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia(SMALL_SCREEN_QUERY).matches;
+  });
+  const [isRailOpen, setIsRailOpen] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return !window.matchMedia(SMALL_SCREEN_QUERY).matches;
+  });
+  const [isDashboardOpen, setIsDashboardOpen] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return !window.matchMedia(SMALL_SCREEN_QUERY).matches;
+  });
+  const [isDisclaimerOpen, setIsDisclaimerOpen] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return !window.matchMedia(SMALL_SCREEN_QUERY).matches;
+  });
   const [isReportFormOpen, setIsReportFormOpen] = useState(false);
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
   const [reportForm, setReportForm] = useState(EMPTY_REPORT_FORM);
@@ -275,6 +288,7 @@ export function CrimeMap() {
   useEffect(() => {
     setIsRailOpen(!isSmallScreen);
     setIsDashboardOpen(!isSmallScreen);
+    setIsDisclaimerOpen(!isSmallScreen);
   }, [isSmallScreen]);
 
   useEffect(() => {
@@ -831,7 +845,7 @@ export function CrimeMap() {
                   aria-expanded={isDashboardOpen}
                   aria-controls="dashboard-panel"
                 >
-                  {isDashboardOpen ? 'Hide dashboard' : 'Show dashboard'}
+                  {isDashboardOpen ? 'Minimize' : 'Expand'}
                 </button>
               ) : null}
               <button
@@ -968,8 +982,24 @@ export function CrimeMap() {
             ) : null}
           </div>
         </section>
-        <div className="map-disclaimer" hidden={isSmallScreen && !isDashboardOpen}>
-          {disclaimerText}
+        <div className="map-disclaimer">
+          {isSmallScreen ? (
+            <div className="map-disclaimer__header">
+              <strong>Notice</strong>
+              <button
+                type="button"
+                className="map-disclaimer__toggle"
+                onClick={() => setIsDisclaimerOpen((current) => !current)}
+                aria-expanded={isDisclaimerOpen}
+                aria-controls="map-disclaimer-panel"
+              >
+                {isDisclaimerOpen ? 'Minimize' : 'Expand'}
+              </button>
+            </div>
+          ) : null}
+          <div id="map-disclaimer-panel" hidden={isSmallScreen && !isDisclaimerOpen}>
+            {disclaimerText}
+          </div>
         </div>
         <aside
           className={`incident-rail${isSmallScreen ? ' is-small-screen' : ''}${isRailOpen ? ' is-open' : ''}`}
@@ -988,7 +1018,7 @@ export function CrimeMap() {
                   aria-expanded={isRailOpen}
                   aria-controls="incident-list-panel"
                 >
-                  {isRailOpen ? 'Hide list' : 'Show list'}
+                  {isRailOpen ? 'Minimize' : 'Expand'}
                 </button>
               ) : null}
             </div>

@@ -303,6 +303,35 @@ a {
   backdrop-filter: blur(12px);
 }
 
+.map-disclaimer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.map-disclaimer__header strong {
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.map-disclaimer__toggle {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  padding: 6px 10px;
+  font-size: 0.7rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.map-disclaimer__toggle:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
 .incident-rail {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -654,6 +683,14 @@ a {
     font-size: 0.68rem;
     line-height: 1.35;
     box-shadow: none;
+  }
+
+  .map-disclaimer__header {
+    margin-bottom: 0;
+  }
+
+  .map-disclaimer__header strong {
+    font-size: 0.68rem;
   }
 
   .incident-rail {

@@ -25,6 +25,7 @@
   "license": "ISC",
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1008.0",
+    "@heroicons/react": "^2.2.0",
     "@langchain/textsplitters": "^1.0.1",
     "@qdrant/js-client-rest": "^1.17.0",
     "@turf/boolean-point-in-polygon": "^7.3.4",

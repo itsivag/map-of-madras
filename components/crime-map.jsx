@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/solid';
 
 const CATEGORY_COLORS = {
   murder: '#5f0f12',
@@ -845,7 +846,7 @@ export function CrimeMap() {
                   aria-expanded={isDashboardOpen}
                   aria-controls="dashboard-panel"
                 >
-                  {isDashboardOpen ? 'Minimize' : 'Expand'}
+                  {isDashboardOpen ? <ChevronUpIcon className="panel-toggle-icon" /> : <ChevronDownIcon className="panel-toggle-icon" />}
                 </button>
               ) : null}
               <button
@@ -993,7 +994,7 @@ export function CrimeMap() {
                 aria-expanded={isDisclaimerOpen}
                 aria-controls="map-disclaimer-panel"
               >
-                {isDisclaimerOpen ? 'Minimize' : 'Expand'}
+                {isDisclaimerOpen ? <ChevronUpIcon className="panel-toggle-icon" /> : <ChevronDownIcon className="panel-toggle-icon" />}
               </button>
             </div>
           ) : null}
@@ -1018,7 +1019,7 @@ export function CrimeMap() {
                   aria-expanded={isRailOpen}
                   aria-controls="incident-list-panel"
                 >
-                  {isRailOpen ? 'Minimize' : 'Expand'}
+                  {isRailOpen ? <ChevronDownIcon className="panel-toggle-icon" /> : <ChevronUpIcon className="panel-toggle-icon" />}
                 </button>
               ) : null}
             </div>

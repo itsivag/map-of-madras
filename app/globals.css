@@ -491,6 +491,12 @@ a {
   font-size: 0.82rem;
 }
 
+.panel-toggle-icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
 .incident-rail__toggle {
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 999px;

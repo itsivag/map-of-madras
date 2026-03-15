@@ -599,6 +599,10 @@ a {
     padding: 12px;
     border-radius: 14px;
     box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+    max-height: 60dvh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
   .time-widget__label {
@@ -618,6 +622,8 @@ a {
 
   .time-widget__panel {
     margin-top: 8px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .time-widget__toggle {

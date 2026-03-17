@@ -30,7 +30,7 @@
     "parserMode": "rss"
   },
   {
-    "id": "google-news-chennai-suburbs-north-west',
+    "id": "google-news-chennai-suburbs-north-west",
     "name": "Google News Chennai Suburbs North West",
     "feedUrl": "https://news.google.com/rss/search?q=(crime+OR+murder+OR+rape+OR+kidnapping+OR+robbery)+(Avadi+OR+Ambattur+OR+Madhavaram+OR+Puzhal+OR+Tiruvottiyur+OR+Ennore+OR+Red+Hills)&hl=en-IN&gl=IN&ceid=IN:en",
     "websiteUrl": "https://news.google.com/",
@@ -38,7 +38,7 @@
     "parserMode": "rss"
   },
   {
-    "id": "google-news-chennai-suburbs-south-west',
+    "id": "google-news-chennai-suburbs-south-west",
     "name": "Google News Chennai Suburbs South West",
     "feedUrl": "https://news.google.com/rss/search?q=(crime+OR+murder+OR+rape+OR+kidnapping+OR+robbery)+(Tambaram+OR+Pallavaram+OR+Chromepet+OR+Selaiyur+OR+Perungalathur+OR+Guduvancheri+OR+Urapakkam+OR+Meenambakkam)&hl=en-IN&gl=IN&ceid=IN:en",
     "websiteUrl": "https://news.google.com/",
@@ -46,7 +46,7 @@
     "parserMode": "rss"
   },
   {
-    "id": "google-news-chennai-suburbs-south-east',
+    "id": "google-news-chennai-suburbs-south-east",
     "name": "Google News Chennai Suburbs South East",
     "feedUrl": "https://news.google.com/rss/search?q=(crime+OR+murder+OR+rape+OR+kidnapping+OR+robbery)+(Velachery+OR+Pallikaranai+OR+Medavakkam+OR+Perungudi+OR+Thoraipakkam+OR+Sholinganallur+OR+Neelankarai+OR+Injambakkam+OR+Kelambakkam)&hl=en-IN&gl=IN&ceid=IN:en",
     "websiteUrl": "https://news.google.com/",
@@ -54,7 +54,7 @@
     "parserMode": "rss"
   },
   {
-    "id": "google-news-chennai-suburbs-west',
+    "id": "google-news-chennai-suburbs-west",
     "name": "Google News Chennai Suburbs West",
     "feedUrl": "https://news.google.com/rss/search?q=(crime+OR+murder+OR+rape+OR+kidnapping+OR+robbery)+(Porur+OR+Poonamallee+OR+Iyyapanthangal+OR+Thiruverkadu+OR+Maduravoyal+OR+Valasaravakkam+OR+Nolambur+OR+Mogappair)&hl=en-IN&gl=IN&ceid=IN:en",
     "websiteUrl": "https://news.google.com/",
@@ -100,7 +100,7 @@
     "feedUrl": "https://www.dinamani.com/all-editions/edition-chennai/chennai",
     "websiteUrl": "https://www.dinamani.com/all-editions/edition-chennai/chennai",
     "enabled": true,
-    "parserMode": "html-links',
+    "parserMode": "html-links",
     "htmlLinkIncludePatterns": [
       "/all-editions/edition-chennai/chennai/"
     ]

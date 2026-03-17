@@ -241,7 +241,21 @@ const CRIME_HINT_PATTERNS = [
   /\bhacked to death\b/i,
   /\bbeat(?:en)? to death\b/i,
   /\battack(?:ed)?\b/i,
-  /\bstabbed\b/i
+  /\bstabbed\b/i,
+  /\bsection \d{3,}/i,
+  /\bIPC\b/i,
+  /\bFIR\b/i,
+  /\bcase registered\b/i,
+  /\bpolice custody\b/i,
+  /\btaken into custody\b/i,
+  /\bremand\b/i,
+  /\bextortion\b/i,
+  /\bhurt\b/i,
+  /\btrespass\b/i,
+  /\bmolest/i,
+  /\boutrage\b/i,
+  /\bmodesty\b/i,
+  /\bPOCSO\b/i
 ];
 
 const COMMUNITY_SOURCE_NAME = 'Anonymous community report';
@@ -319,12 +333,12 @@ export class IngestService {
     pipelineMode = 'semantic',
     publishThreshold = 0.8,
     ingestCron = '0 * * * *',
-    manualLookbackHours = 4,
+    manualLookbackHours = 24,
     ingestionWindowOverlapMinutes = 30,
-    maxItemsPerSource = 6,
+    maxItemsPerSource = 25,
     sourceTimeBudgetMs = 90000,
     itemTimeoutMs = 20000,
-    runTimeBudgetMs = 120000
+    runTimeBudgetMs = 300000
   }) {
     this.db = db;
     this.rssService = rssService;

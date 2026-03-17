@@ -1,5 +1,6 @@
 import Parser from 'rss-parser';
 import * as cheerio from 'cheerio';
+import { createCrawl4AIService } from './crawl4ai.js';
 
 function stripHtml(html = '') {
   if (!html) {
@@ -244,7 +245,9 @@ export function createRssService({
   articleFetchTimeoutMs = 15000,
   browserlessApiKey = '',
   browserlessBaseUrl = 'https://production-sfo.browserless.io',
-  browserlessClient = null
+  browserlessClient = null,
+  crawl4aiUrl = '',
+  crawl4aiToken = ''
 }) {
   const parser = new Parser({
     timeout: 15000,
@@ -262,6 +265,16 @@ export function createRssService({
           userAgent
         })
       : null);
+
+  // Crawl4AI service (preferred over Browserless if configured)
+  const crawl4aiService =
+    crawl4aiUrl
+      ? createCrawl4AIService({
+          fetchImpl,
+          baseUrl: crawl4aiUrl,
+          apiToken: crawl4aiToken
+        })
+      : null;
 
   function normalizeFeedItems(rawItems) {
     const items = Array.isArray(rawItems) ? rawItems : [];
@@ -521,6 +534,22 @@ export function createRssService({
       };
     }
 
+    // Priority 1: Crawl4AI (if configured) - provides markdown + metadata
+    if (crawl4aiService) {
+      try {
+        const crawlResult = await crawl4aiService.fetchArticleContent(url, {
+          timeoutMs: articleFetchTimeoutMs
+        });
+        if (hasSubstantialArticleContent(crawlResult.content)) {
+          return crawlResult;
+        }
+      } catch (error) {
+        console.warn(`Crawl4AI failed for ${url}:`, error.message);
+        // Fall through to next method
+      }
+    }
+
+    // Priority 2: Browserless client (if explicitly provided)
     if (browserlessClient) {
       const html = await withPromiseTimeout(
         browserless.getContent(url, { timeoutMs: articleFetchTimeoutMs }),
@@ -530,6 +559,7 @@ export function createRssService({
       return parseArticlePageDataFromHtml(html);
     }
 
+    // Priority 3: Direct fetch (fastest, but may be blocked by paywalls)
     let directPageData = {
       content: '',
       publishedAt: null,
@@ -548,37 +578,43 @@ export function createRssService({
       directFetchError = error;
     }
 
-    if (hasSubstantialArticleContent(directPageData.content) || !browserless) {
-      if (!directPageData.content && directFetchError && !browserless) {
-        throw directFetchError;
-      }
-
+    if (hasSubstantialArticleContent(directPageData.content)) {
       return directPageData;
     }
 
-    const browserlessHtml = await withPromiseTimeout(
-      browserless.getContent(url, { timeoutMs: articleFetchTimeoutMs }),
-      articleFetchTimeoutMs + 1000,
-      `Browserless content for ${url}`
-    );
-    const browserlessPageData = parseArticlePageDataFromHtml(browserlessHtml);
-
-    const metadata = {
-      title: browserlessPageData.title || directPageData.title || '',
-      description: ''
-    };
-    const contentCandidates = [directPageData.content, browserlessPageData.content]
-      .filter(Boolean)
-      .sort(
-        (left, right) =>
-          scoreArticleTextCandidate(right, metadata) - scoreArticleTextCandidate(left, metadata)
+    // Priority 4: Browserless fallback (if configured via API key)
+    if (browserless) {
+      const browserlessHtml = await withPromiseTimeout(
+        browserless.getContent(url, { timeoutMs: articleFetchTimeoutMs }),
+        articleFetchTimeoutMs + 1000,
+        `Browserless content for ${url}`
       );
+      const browserlessPageData = parseArticlePageDataFromHtml(browserlessHtml);
 
-    return {
-      content: contentCandidates[0] || '',
-      publishedAt: browserlessPageData.publishedAt || directPageData.publishedAt,
-      title: browserlessPageData.title || directPageData.title
-    };
+      const metadata = {
+        title: browserlessPageData.title || directPageData.title || '',
+        description: ''
+      };
+      const contentCandidates = [directPageData.content, browserlessPageData.content]
+        .filter(Boolean)
+        .sort(
+          (left, right) =>
+            scoreArticleTextCandidate(right, metadata) - scoreArticleTextCandidate(left, metadata)
+        );
+
+      return {
+        content: contentCandidates[0] || '',
+        publishedAt: browserlessPageData.publishedAt || directPageData.publishedAt,
+        title: browserlessPageData.title || directPageData.title
+      };
+    }
+
+    // No fallback available
+    if (!directPageData.content && directFetchError) {
+      throw directFetchError;
+    }
+
+    return directPageData;
   }
 
   async function enrichItem(source, item) {

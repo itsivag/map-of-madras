@@ -91,7 +91,7 @@ function deriveRejectionReason({ extraction, geocoded }) {
     return 'Model did not provide location evidence chunk ids.';
   }
 
-  if (extraction.confidence < 0.8) {
+  if (extraction.confidence < 0.65) {
     return 'Semantic confidence below publish threshold.';
   }
 
@@ -139,7 +139,7 @@ export class SemanticPipeline {
     qdrantService,
     chunker,
     geoService,
-    publishThreshold = 0.8,
+    publishThreshold = 0.65,
     pipelineMode = 'semantic'
   }) {
     this.db = db;

@@ -18,6 +18,8 @@ import {
   ADMIN_TOKEN,
   BROWSERLESS_API_KEY,
   BROWSERLESS_BASE_URL,
+  CRAWL4AI_URL,
+  CRAWL4AI_TOKEN,
   USER_AGENT,
   AWS_REGION,
   BEDROCK_TITAN_EMBED_MODEL_ID,
@@ -58,6 +60,8 @@ async function bootstrap() {
     userAgent: USER_AGENT,
     browserlessApiKey: BROWSERLESS_API_KEY,
     browserlessBaseUrl: BROWSERLESS_BASE_URL,
+    crawl4aiUrl: CRAWL4AI_URL,
+    crawl4aiToken: CRAWL4AI_TOKEN,
     maxItemsPerFeed: RSS_MAX_ITEMS_PER_FEED
   });
   const bedrockService = new BedrockSemanticService({

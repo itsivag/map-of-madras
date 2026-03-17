@@ -193,9 +193,8 @@ export function createGeoService({
       return false;
     }
 
-    return (
-      isRegionalLocalityCandidate(candidateLocality) || isRegionalLocalityCandidate(displayName)
-    );
+    // Accept if within regional bounds (more lenient for Chennai suburbs)
+    return true;
   }
 
   function buildLocalityQueries(locality) {

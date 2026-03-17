@@ -33,6 +33,8 @@ export const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
 export const BROWSERLESS_API_KEY = process.env.BROWSERLESS_API_KEY || '';
 export const BROWSERLESS_BASE_URL =
   process.env.BROWSERLESS_BASE_URL || 'https://production-sfo.browserless.io';
+export const CRAWL4AI_URL = process.env.CRAWL4AI_URL || '';
+export const CRAWL4AI_TOKEN = process.env.CRAWL4AI_TOKEN || '';
 export const USER_AGENT =
   process.env.INGEST_USER_AGENT ||
   'map-of-madras/1.0 (localhost development; contact: local-admin@example.com)';

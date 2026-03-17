@@ -11,7 +11,7 @@ function stripHtml(html = '') {
   return $.text().replace(/\s+/g, ' ').trim();
 }
 
-function compactText(value = '') {
+export function compactText(value = '') {
   return value.replace(/\s+/g, ' ').trim();
 }
 

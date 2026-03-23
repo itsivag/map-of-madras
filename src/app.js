@@ -452,7 +452,8 @@ export function createApp({
   geoService,
   rootDir,
   corsAllowedOrigins = '*',
-  adminToken = ''
+  adminToken = '',
+  pipelineMode = 'semantic'
 }) {
   const app = express();
   const frontendDir = path.join(rootDir, 'out');
@@ -617,11 +618,15 @@ export function createApp({
 
     const sourceHealth = db
       .prepare(
-        `SELECT id, name, enabled, feed_url, last_success_at, last_error
+        `SELECT id, name, enabled, homepage_url, feed_url, last_success_at, last_error
          FROM sources
          ORDER BY name ASC`
       )
       .all();
+
+    const isConfigured = typeof ingestService.isConfigured === 'function' 
+      ? ingestService.isConfigured() 
+      : (typeof ingestService.isSemanticConfigured === 'function' ? ingestService.isSemanticConfigured() : false);
 
     res.json({
       disclaimer:
@@ -630,11 +635,9 @@ export function createApp({
       categoryCounts,
       sourceHealth,
       pipeline: {
-        mode: ingestService.pipelineMode || 'semantic',
-        semanticConfigured:
-          typeof ingestService.isSemanticConfigured === 'function'
-            ? ingestService.isSemanticConfigured()
-            : false
+        mode: pipelineMode,
+        configured: isConfigured,
+        semanticConfigured: isConfigured  // Backward compatibility
       },
       boundary: {
         maxBounds: geoService.bounds.leafletMaxBounds,

@@ -5,8 +5,6 @@ import {
   DB_PATH,
   PORT,
   INGEST_CRON,
-  RSS_MAX_ITEMS_PER_FEED,
-  INGEST_MAX_ITEMS_PER_SOURCE,
   MANUAL_INGEST_LOOKBACK_HOURS,
   INGEST_WINDOW_OVERLAP_MINUTES,
   INGEST_SOURCE_TIME_BUDGET_MS,
@@ -16,10 +14,12 @@ import {
   SEMANTIC_PUBLISH_THRESHOLD,
   CORS_ALLOWED_ORIGINS,
   ADMIN_TOKEN,
-  BROWSERLESS_API_KEY,
-  BROWSERLESS_BASE_URL,
   CRAWL4AI_URL,
   CRAWL4AI_TOKEN,
+  CRAWL4AI_MAX_ARTICLES,
+  EXTRACTION_CONFIDENCE_THRESHOLD,
+  USE_SIMPLE_PIPELINE,
+  SIMPLE_PIPELINE_MODEL_ID,
   USER_AGENT,
   AWS_REGION,
   BEDROCK_TITAN_EMBED_MODEL_ID,
@@ -37,6 +37,10 @@ import {
 import { initDatabase } from './db/init.js';
 import { createGeoService } from './services/geo.js';
 import { createRssService } from './services/rss.js';
+import { createCrawl4AIService } from './services/crawl4ai.js';
+import { Crawl4aiDiscoveryService } from './services/crawl4aiDiscovery.js';
+import { SimpleExtractionService } from './services/simpleExtraction.js';
+import { SimpleIngestService } from './services/simpleIngestService.js';
 import { BedrockSemanticService } from './services/bedrockService.js';
 import { IngestService } from './services/ingestService.js';
 import { QdrantService } from './services/qdrantService.js';
@@ -50,57 +54,102 @@ async function bootstrap() {
   const boundaryGeoJson = loadBoundaryGeoJson();
 
   const db = initDatabase(DB_PATH, sourceConfigs);
+  
   const geoService = createGeoService({
     boundaryGeoJson,
     localities,
     regionalLocalities: greaterChennaiLocalities,
     userAgent: USER_AGENT
   });
-  const rssService = createRssService({
-    userAgent: USER_AGENT,
-    browserlessApiKey: BROWSERLESS_API_KEY,
-    browserlessBaseUrl: BROWSERLESS_BASE_URL,
-    crawl4aiUrl: CRAWL4AI_URL,
-    crawl4aiToken: CRAWL4AI_TOKEN,
-    maxItemsPerFeed: RSS_MAX_ITEMS_PER_FEED
+
+  // Create Crawl4AI services
+  const crawl4aiService = createCrawl4AIService({
+    baseUrl: CRAWL4AI_URL,
+    apiToken: CRAWL4AI_TOKEN
   });
+
+  // Create Bedrock service
   const bedrockService = new BedrockSemanticService({
     region: AWS_REGION,
     embedModelId: BEDROCK_TITAN_EMBED_MODEL_ID,
     extractionModelId: BEDROCK_MINIMAX_MODEL_ID,
     promptVersion: SEMANTIC_PROMPT_VERSION
   });
-  const qdrantService = new QdrantService({
-    url: QDRANT_URL,
-    apiKey: QDRANT_API_KEY,
-    articleCollectionName: QDRANT_ARTICLE_COLLECTION,
-    taxonomyCollectionName: QDRANT_TAXONOMY_COLLECTION
-  });
-  const semanticPipeline = new SemanticPipeline({
-    db,
-    bedrockService,
-    qdrantService,
-    chunker: new SemanticChunker(),
-    geoService,
-    publishThreshold: SEMANTIC_PUBLISH_THRESHOLD,
-    pipelineMode: PIPELINE_MODE
-  });
 
-  const ingestService = new IngestService({
-    db,
-    rssService,
-    geoService,
-    semanticPipeline,
-    publishThreshold: SEMANTIC_PUBLISH_THRESHOLD,
-    ingestCron: INGEST_CRON,
-    manualLookbackHours: MANUAL_INGEST_LOOKBACK_HOURS,
-    ingestionWindowOverlapMinutes: INGEST_WINDOW_OVERLAP_MINUTES,
-    pipelineMode: PIPELINE_MODE,
-    maxItemsPerSource: INGEST_MAX_ITEMS_PER_SOURCE,
-    sourceTimeBudgetMs: INGEST_SOURCE_TIME_BUDGET_MS,
-    itemTimeoutMs: INGEST_ITEM_TIMEOUT_MS,
-    runTimeBudgetMs: INGEST_RUN_TIME_BUDGET_MS
-  });
+  // Choose pipeline based on config
+  let ingestService;
+  let pipelineMode = PIPELINE_MODE;
+
+  if (USE_SIMPLE_PIPELINE) {
+    console.log('[bootstrap] Using simplified pipeline (Crawl4AI + Direct LLM)');
+    
+    const crawl4aiDiscovery = new Crawl4aiDiscoveryService({
+      crawl4aiClient: crawl4aiService.client,
+      maxArticlesPerSource: CRAWL4AI_MAX_ARTICLES
+    });
+
+    const simpleExtraction = new SimpleExtractionService({
+      bedrockClient: bedrockService.client,
+      modelId: SIMPLE_PIPELINE_MODEL_ID
+    });
+
+    ingestService = new SimpleIngestService({
+      db,
+      crawl4aiDiscovery,
+      crawl4aiFetcher: crawl4aiService,
+      extractionService: simpleExtraction,
+      geoService,
+      publishThreshold: EXTRACTION_CONFIDENCE_THRESHOLD,
+      maxArticlesPerSource: CRAWL4AI_MAX_ARTICLES,
+      articleTimeoutMs: INGEST_ITEM_TIMEOUT_MS,
+      sourceTimeBudgetMs: INGEST_SOURCE_TIME_BUDGET_MS,
+      runTimeBudgetMs: INGEST_RUN_TIME_BUDGET_MS
+    });
+    
+    pipelineMode = 'simple';
+  } else {
+    console.log('[bootstrap] Using semantic pipeline (Vectors + Qdrant)');
+    
+    const rssService = createRssService({
+      userAgent: USER_AGENT,
+      crawl4aiUrl: CRAWL4AI_URL,
+      crawl4aiToken: CRAWL4AI_TOKEN,
+      maxItemsPerFeed: 8
+    });
+
+    const qdrantService = new QdrantService({
+      url: QDRANT_URL,
+      apiKey: QDRANT_API_KEY,
+      articleCollectionName: QDRANT_ARTICLE_COLLECTION,
+      taxonomyCollectionName: QDRANT_TAXONOMY_COLLECTION
+    });
+
+    const semanticPipeline = new SemanticPipeline({
+      db,
+      bedrockService,
+      qdrantService,
+      chunker: new SemanticChunker(),
+      geoService,
+      publishThreshold: SEMANTIC_PUBLISH_THRESHOLD,
+      pipelineMode: PIPELINE_MODE
+    });
+
+    ingestService = new IngestService({
+      db,
+      rssService,
+      geoService,
+      semanticPipeline,
+      publishThreshold: SEMANTIC_PUBLISH_THRESHOLD,
+      ingestCron: INGEST_CRON,
+      manualLookbackHours: MANUAL_INGEST_LOOKBACK_HOURS,
+      ingestionWindowOverlapMinutes: INGEST_WINDOW_OVERLAP_MINUTES,
+      pipelineMode: PIPELINE_MODE,
+      maxItemsPerSource: 8,
+      sourceTimeBudgetMs: INGEST_SOURCE_TIME_BUDGET_MS,
+      itemTimeoutMs: INGEST_ITEM_TIMEOUT_MS,
+      runTimeBudgetMs: INGEST_RUN_TIME_BUDGET_MS
+    });
+  }
 
   const app = createApp({
     db,
@@ -108,15 +157,15 @@ async function bootstrap() {
     geoService,
     rootDir: ROOT_DIR,
     corsAllowedOrigins: CORS_ALLOWED_ORIGINS,
-    adminToken: ADMIN_TOKEN
+    adminToken: ADMIN_TOKEN,
+    pipelineMode
   });
 
   const server = app.listen(PORT, () => {
     console.log(`Server listening on http://localhost:${PORT}`);
     console.log(`SQLite database: ${DB_PATH}`);
-    console.log(
-      `Semantic pipeline: mode=${PIPELINE_MODE} configured=${semanticPipeline.isConfigured()}`
-    );
+    console.log(`Pipeline mode: ${pipelineMode}`);
+    console.log(`Simple pipeline configured: ${ingestService.isConfigured?.() ?? 'N/A'}`);
   });
 
   cron.schedule(INGEST_CRON, async () => {

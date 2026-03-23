@@ -160,7 +160,11 @@ const ARTICLE_RAW_COLUMNS = [
 const SOURCE_COLUMNS = [
   ['crime_keyword_filter', 'INTEGER NOT NULL DEFAULT 0'],
   ['html_link_include_patterns', 'TEXT'],
-  ['html_link_exclude_patterns', 'TEXT']
+  ['html_link_exclude_patterns', 'TEXT'],
+  ['homepage_url', 'TEXT'],
+  ['include_patterns', 'TEXT'],
+  ['exclude_patterns', 'TEXT'],
+  ['max_articles', 'INTEGER DEFAULT 8']
 ];
 
 export function initDatabase(dbPath, sourceConfigs = []) {
@@ -177,7 +181,42 @@ export function initDatabase(dbPath, sourceConfigs = []) {
   ensureLegacyIncidentSourceBackfill(db);
 
   seedSources(db, sourceConfigs);
+  migrateSourceConfig(db);
   return db;
+}
+
+function migrateSourceConfig(db) {
+  // Migrate old sources to use homepage_url if not set
+  const sources = db.prepare("SELECT id, feed_url, website_url, homepage_url FROM sources").all();
+  const updateStmt = db.prepare("UPDATE sources SET homepage_url = ?, include_patterns = ? WHERE id = ?");
+  
+  for (const source of sources) {
+    if (source.homepage_url) continue; // Already migrated
+    
+    const homepageUrl = source.website_url || source.feed_url;
+    if (!homepageUrl) continue;
+    
+    // Set include patterns based on domain
+    let includePatterns = null;
+    if (homepageUrl.includes('thehindu.com')) {
+      includePatterns = JSON.stringify(['/news/cities/chennai/']);
+    } else if (homepageUrl.includes('timesofindia')) {
+      includePatterns = JSON.stringify(['/city/chennai/', 'articleshow']);
+    } else if (homepageUrl.includes('indianexpress.com')) {
+      includePatterns = JSON.stringify(['/section/cities/chennai/']);
+    } else if (homepageUrl.includes('newindianexpress.com')) {
+      includePatterns = JSON.stringify(['/cities/chennai/']);
+    } else if (homepageUrl.includes('dtnext.in')) {
+      includePatterns = JSON.stringify(['/news/chennai/']);
+    } else if (homepageUrl.includes('dinamani.com')) {
+      includePatterns = JSON.stringify(['/all-editions/edition-chennai/chennai/']);
+    } else if (homepageUrl.includes('google.com') || homepageUrl.includes('googlenews')) {
+      // Google News RSS - keep RSS parsing for now
+      continue;
+    }
+    
+    updateStmt.run(homepageUrl, includePatterns, source.id);
+  }
 }
 
 function seedSources(db, sourceConfigs) {
@@ -187,11 +226,15 @@ function seedSources(db, sourceConfigs) {
       name,
       feed_url,
       website_url,
+      homepage_url,
       enabled,
       parser_mode,
       crime_keyword_filter,
       html_link_include_patterns,
       html_link_exclude_patterns,
+      include_patterns,
+      exclude_patterns,
+      max_articles,
       updated_at
     )
     VALUES (
@@ -199,32 +242,42 @@ function seedSources(db, sourceConfigs) {
       @name,
       @feedUrl,
       @websiteUrl,
+      @homepageUrl,
       @enabled,
       @parserMode,
       @crimeKeywordFilter,
       @htmlLinkIncludePatterns,
       @htmlLinkExcludePatterns,
+      @includePatterns,
+      @excludePatterns,
+      @maxArticles,
       datetime('now')
     )
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       feed_url = excluded.feed_url,
       website_url = excluded.website_url,
+      homepage_url = excluded.homepage_url,
       enabled = excluded.enabled,
       parser_mode = excluded.parser_mode,
       crime_keyword_filter = excluded.crime_keyword_filter,
       html_link_include_patterns = excluded.html_link_include_patterns,
       html_link_exclude_patterns = excluded.html_link_exclude_patterns,
+      include_patterns = excluded.include_patterns,
+      exclude_patterns = excluded.exclude_patterns,
+      max_articles = excluded.max_articles,
       updated_at = datetime('now')
   `);
 
   const tx = db.transaction((sources) => {
     for (const source of sources) {
+      const homepageUrl = source.homepageUrl || source.websiteUrl || source.feedUrl;
       statement.run({
         id: source.id,
         name: source.name,
-        feedUrl: source.feedUrl,
+        feedUrl: source.feedUrl || null,
         websiteUrl: source.websiteUrl || null,
+        homepageUrl: homepageUrl || null,
         enabled: source.enabled ? 1 : 0,
         parserMode: source.parserMode || 'rss',
         crimeKeywordFilter: source.crimeKeywordFilter ? 1 : 0,
@@ -233,7 +286,14 @@ function seedSources(db, sourceConfigs) {
           : null,
         htmlLinkExcludePatterns: Array.isArray(source.htmlLinkExcludePatterns)
           ? JSON.stringify(source.htmlLinkExcludePatterns)
-          : null
+          : null,
+        includePatterns: Array.isArray(source.includePatterns)
+          ? JSON.stringify(source.includePatterns)
+          : (Array.isArray(source.htmlLinkIncludePatterns) ? JSON.stringify(source.htmlLinkIncludePatterns) : null),
+        excludePatterns: Array.isArray(source.excludePatterns)
+          ? JSON.stringify(source.excludePatterns)
+          : (Array.isArray(source.htmlLinkExcludePatterns) ? JSON.stringify(source.htmlLinkExcludePatterns) : null),
+        maxArticles: source.maxArticles || 8
       });
     }
   });

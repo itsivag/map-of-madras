@@ -1,4 +1,6 @@
-import { compactText } from './rss.js';
+function compactText(value = '') {
+  return value.replace(/\s+/g, ' ').trim();
+}
 
 const CRAWL4AI_DEFAULT_URL = 'http://localhost:11235';
 
@@ -100,6 +102,7 @@ export function createCrawl4AIService({
   const client = createCrawl4AIClient({ fetchImpl, baseUrl, apiToken });
 
   return {
+    client,
     async fetchArticleContent(url, { timeoutMs = 15000 } = {}) {
       const result = await withPromiseTimeout(
         client.getContent(url, { timeoutMs }),

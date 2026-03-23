@@ -15,6 +15,11 @@ export const PORT = Number(process.env.PORT || 3000);
 export const INGEST_CRON = process.env.INGEST_CRON || '0 * * * *';
 export const RSS_MAX_ITEMS_PER_FEED = Number(process.env.RSS_MAX_ITEMS_PER_FEED || 8);
 export const INGEST_MAX_ITEMS_PER_SOURCE = Number(process.env.INGEST_MAX_ITEMS_PER_SOURCE || 4);
+
+// Simplified pipeline config
+export const USE_SIMPLE_PIPELINE = process.env.USE_SIMPLE_PIPELINE === 'true';
+export const CRAWL4AI_MAX_ARTICLES = Number(process.env.CRAWL4AI_MAX_ARTICLES || 8);
+export const EXTRACTION_CONFIDENCE_THRESHOLD = Number(process.env.EXTRACTION_CONFIDENCE_THRESHOLD || 0.65);
 export const MANUAL_INGEST_LOOKBACK_HOURS = Number(
   process.env.MANUAL_INGEST_LOOKBACK_HOURS || 4
 );
@@ -45,6 +50,9 @@ export const BEDROCK_MINIMAX_MODEL_ID =
   process.env.BEDROCK_MINIMAX_MODEL_ID || 'minimax.minimax-m2.1';
 export const QDRANT_URL = process.env.QDRANT_URL || '';
 export const QDRANT_API_KEY = process.env.QDRANT_API_KEY || '';
+
+// Simple pipeline uses same Bedrock model but we add option for cheaper alternative
+export const SIMPLE_PIPELINE_MODEL_ID = process.env.SIMPLE_PIPELINE_MODEL_ID || process.env.BEDROCK_MINIMAX_MODEL_ID || 'minimax.minimax-m2.1';
 export const QDRANT_ARTICLE_COLLECTION =
   process.env.QDRANT_ARTICLE_COLLECTION || 'article_chunks_v1';
 export const QDRANT_TAXONOMY_COLLECTION =

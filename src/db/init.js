@@ -296,7 +296,7 @@ function seedSources(db, sourceConfigs) {
     )
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
-      feed_url = excluded.feed_url,
+      feed_url = COALESCE(excluded.feed_url, sources.feed_url),
       website_url = excluded.website_url,
       homepage_url = excluded.homepage_url,
       enabled = excluded.enabled,
@@ -312,11 +312,12 @@ function seedSources(db, sourceConfigs) {
 
   const tx = db.transaction((sources) => {
     for (const source of sources) {
-      const homepageUrl = source.homepageUrl || source.websiteUrl || source.feedUrl;
+      const homepageUrl = source.homepageUrl || source.websiteUrl || source.feedUrl || '';
+      const feedUrl = source.feedUrl || homepageUrl || ''; // Ensure never null
       statement.run({
         id: source.id,
         name: source.name,
-        feedUrl: source.feedUrl || source.homepageUrl || null,
+        feedUrl: feedUrl,
         websiteUrl: source.websiteUrl || null,
         homepageUrl: homepageUrl || null,
         enabled: source.enabled ? 1 : 0,

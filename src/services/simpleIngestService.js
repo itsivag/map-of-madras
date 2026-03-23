@@ -725,6 +725,9 @@ export class SimpleIngestService {
         publishedAt: fetchResult.publishedAt || new Date().toISOString()
       };
 
+      // Log article info
+      console.log(`[debug] Article fetched: title="${article.title?.slice(0, 50)}...", contentLength=${article.content?.length}`);
+
       // Extract
       const extractionResult = await this.extractionService.extractIncident(article);
 
@@ -749,7 +752,8 @@ export class SimpleIngestService {
         rawText: extractionResult.rawText
       };
     } catch (error) {
-      return { url, configured: true, error: error.message };
+      console.error(`[debug] Error: ${error.message}`, error.stack);
+      return { url, configured: true, error: error.message, stack: error.stack };
     }
   }
 

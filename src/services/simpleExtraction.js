@@ -211,6 +211,8 @@ export class SimpleExtractionService {
       throw new Error('Bedrock client is not configured');
     }
 
+    console.log(`[SimpleExtraction] Starting extraction for: ${article.title?.slice(0, 50)}...`);
+    
     const prompt = this.buildPrompt(article);
 
     try {
@@ -248,6 +250,8 @@ export class SimpleExtractionService {
       const parsed = parseJsonResponse(rawText);
       const extraction = normalizeExtraction(parsed);
 
+      console.log(`[SimpleExtraction] Extraction complete: isCrimeEvent=${extraction.isCrimeEvent}, category=${extraction.category}, confidence=${extraction.confidence}`);
+
       return {
         success: true,
         extraction,
@@ -255,6 +259,7 @@ export class SimpleExtractionService {
         modelId: this.modelId
       };
     } catch (error) {
+      console.error(`[SimpleExtraction] Extraction failed: ${error.message}`);
       return {
         success: false,
         error: error.message,

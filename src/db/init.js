@@ -191,7 +191,10 @@ function migrateSourcesNotNullConstraint(db) {
   const columns = db.prepare("PRAGMA table_info('sources')").all();
   const feedUrlCol = columns.find(c => c.name === 'feed_url');
   
+  console.log(`[db:migrate] feed_url column:`, feedUrlCol);
+  
   if (feedUrlCol && feedUrlCol.notnull === 1) {
+    console.log(`[db:migrate] Recreating sources table to remove NOT NULL constraint...`);
     // SQLite doesn't support ALTER COLUMN, so we need to recreate the table
     db.exec(`
       CREATE TABLE sources_new (

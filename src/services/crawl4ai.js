@@ -74,8 +74,9 @@ export function createCrawl4AIClient({
           );
         }
 
-        const results = await response.json();
-        // Crawl4AI returns an array of results, get the first one
+        const responseData = await response.json();
+        // Crawl4AI returns {success: true, results: [...]}
+        const results = responseData.results || responseData;
         const result = Array.isArray(results) ? results[0] : results;
 
         if (!result) {

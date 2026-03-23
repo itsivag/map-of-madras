@@ -41,8 +41,9 @@ export function createCrawl4AIClient({
   const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
 
   return {
-    async getContent(url, { timeoutMs = 15000 } = {}) {
+    async getContent(url, { timeoutMs = 60000 } = {}) {
       const crawlUrl = `${normalizedBaseUrl}/crawl`;
+      console.log(`[Crawl4AI] Fetching: ${url} (timeout: ${timeoutMs}ms)`);
       const timeout = withTimeout(timeoutMs);
 
       try {
@@ -93,6 +94,9 @@ export function createCrawl4AIClient({
             siteName: result.metadata?.site_name || ''
           }
         };
+      } catch (error) {
+        console.error(`[Crawl4AI] Error fetching ${url}: ${error.message}`);
+        throw error;
       } finally {
         timeout.clear();
       }

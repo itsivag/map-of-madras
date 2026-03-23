@@ -32,7 +32,7 @@ export class Crawl4aiDiscoveryService {
     baseUrl = '',
     apiToken = '',
     maxArticlesPerSource = 10,
-    discoveryTimeoutMs = 20000
+    discoveryTimeoutMs = 60000
   } = {}) {
     this.client = crawl4aiClient || (baseUrl ? createCrawl4AIClient({ fetchImpl, baseUrl, apiToken }) : null);
     this.maxArticlesPerSource = maxArticlesPerSource;

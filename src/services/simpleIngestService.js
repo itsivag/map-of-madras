@@ -267,14 +267,17 @@ export class SimpleIngestService {
 
   async processArticle(url, source, runId) {
     const startTime = Date.now();
+    console.log(`[processArticle] Starting: ${url}`);
     
     try {
       // Fetch article via Crawl4AI
+      console.log(`[processArticle] Fetching: ${url}`);
       const fetchResult = await withPromiseTimeout(
         this.crawl4aiFetcher.fetchArticleContent(url, { timeoutMs: this.articleTimeoutMs }),
         this.articleTimeoutMs + 2000,
         `Article fetch for ${url}`
       );
+      console.log(`[processArticle] Fetched: ${url}, title="${fetchResult.title?.slice(0, 50)}...", contentLength=${fetchResult.content?.length}`);
 
       const article = {
         sourceUrl: url,
@@ -302,6 +305,7 @@ export class SimpleIngestService {
 
       // Skip if content too short
       if (article.content.length < 200) {
+        console.log(`[processArticle] Content too short: ${url} (${article.content.length} chars)`);
         return {
           published: false,
           reason: 'content_too_short',
@@ -311,11 +315,13 @@ export class SimpleIngestService {
       }
 
       // Extract incident using LLM
+      console.log(`[processArticle] Extracting: ${url}`);
       const extractionResult = await withPromiseTimeout(
         this.extractionService.extractIncident(article),
         30000,
         `Extraction for ${url}`
       );
+      console.log(`[processArticle] Extraction result: success=${extractionResult.success}, isCrimeEvent=${extractionResult.extraction?.isCrimeEvent}, confidence=${extractionResult.extraction?.confidence}`);
 
       if (!extractionResult.success) {
         return {

@@ -198,8 +198,8 @@ export class SimpleExtractionService {
   }
 
   buildPrompt(article) {
-    const title = article.title || '';
-    const content = truncateText(article.content || '', this.maxContentLength);
+    const title = String(article.title || '');
+    const content = truncateText(String(article.content || ''), this.maxContentLength);
     
     return DEFAULT_PROMPT
       .replace('{{title}}', title)

@@ -1,27 +1,51 @@
 # Map of Madras
 
-Map of Madras is a Chennai-focused incident map that continuously ingests crime-related news coverage, extracts structured incident data, and plots recent incidents on a restricted Chennai map.
+Map of Madras is a Chennai-focused incident map that continuously ingests crime-related news coverage, extracts structured incident data using AI, and plots recent incidents on a restricted Chennai map.
 
 Live deployment:
 
 - frontend: [https://mapofmadras.web.app](https://mapofmadras.web.app)
 - backend API: [https://backend-production-a0f6.up.railway.app](https://backend-production-a0f6.up.railway.app)
 
-The repo now has a split deployment model:
+The repo has a split deployment model:
 
 - frontend: static Next.js app exported to `out/` and deployed with Firebase Hosting
 - backend: Node + Express API deployed on Railway for ingestion, metadata, and incident feeds
-- data services: SQLite for operations and Qdrant for vector retrieval
+- database: SQLite for incidents and article storage
 
 ## What the app does
 
-- Scrapes Chennai-focused news sources on a schedule
-- Extracts likely crime incidents from articles using a semantic pipeline
-- Resolves incident locations to Chennai-area coordinates
+- Discovers articles from Chennai news sources using Crawl4AI
+- Extracts likely crime incidents from articles using LLM (AWS Bedrock)
+- Resolves incident locations to Chennai-area coordinates using geocoding
 - Filters incidents to Chennai and its suburbs only
 - Publishes only high-confidence incidents to the map
 - Merges duplicate coverage from multiple outlets into a single marker
 - Shows recent incidents on a constrained web map with a simple time slider
+
+## Ingestion Pipeline
+
+The app supports two pipeline modes:
+
+### 1. Simplified Pipeline (Default)
+```
+News Sources → Crawl4AI → Direct LLM Extraction → Geocode → Deduplicate → Publish
+```
+
+- **Discovery**: Crawl4AI scrapes news homepages for article links
+- **Extraction**: Direct LLM call (MiniMax via AWS Bedrock) extracts structured data
+- **Benefits**: Simpler, no vector database needed, faster for short articles
+- **Trade-off**: Higher token usage (full article vs chunks)
+
+### 2. Semantic Pipeline (Legacy)
+```
+News Sources → RSS/HTML → Vector Embeddings → Qdrant → Evidence Retrieval → LLM → Publish
+```
+
+- **Discovery**: RSS feeds or HTML link scraping
+- **Extraction**: Vector search + targeted evidence retrieval + LLM
+- **Benefits**: Lower token costs, better for very long articles
+- **Trade-off**: Requires Qdrant vector database, more complex
 
 ## Frontend architecture
 
@@ -37,15 +61,15 @@ The frontend expects the backend API to be reachable through `window.CCM_CONFIG.
 
 Public endpoints:
 
-- `GET /api/incidents`
-- `GET /api/incidents/:id`
-- `GET /api/meta`
-- `GET /api/boundary`
+- `GET /api/incidents` - List incidents with filters (category, bbox, date range)
+- `GET /api/incidents/:id` - Get incident details with related articles
+- `GET /api/meta` - Service status, source health, pipeline info
+- `GET /api/boundary` - Chennai boundary GeoJSON
 
 Protected endpoints when `ADMIN_TOKEN` is configured:
 
-- `POST /api/ingest/run`
-- `GET /api/debug/article?url=...`
+- `POST /api/ingest/run` - Trigger manual ingestion
+- `GET /api/debug/article?url=...` - Debug extraction for a specific URL
 
 ## Local setup
 
@@ -57,16 +81,30 @@ npm install
 
 ### 2. Create `.env`
 
-Minimum practical backend config:
+**For Simplified Pipeline (Recommended):**
 
 ```env
 PORT=3000
-PIPELINE_MODE=semantic
-BROWSERLESS_API_KEY=your_browserless_token
-BROWSERLESS_BASE_URL=https://production-sfo.browserless.io
+USE_SIMPLE_PIPELINE=true
+CRAWL4AI_URL=http://localhost:11235
+EXTRACTION_CONFIDENCE_THRESHOLD=0.65
+CRAWL4AI_MAX_ARTICLES=8
 AWS_BEARER_TOKEN_BEDROCK=your_bedrock_key
 AWS_REGION=us-east-1
+BEDROCK_MINIMAX_MODEL_ID=minimax.minimax-m2.1
+```
+
+**For Semantic Pipeline (Legacy):**
+
+```env
+PORT=3000
+USE_SIMPLE_PIPELINE=false
+PIPELINE_MODE=semantic
 QDRANT_URL=http://localhost:6333
+AWS_BEARER_TOKEN_BEDROCK=your_bedrock_key
+AWS_REGION=us-east-1
+BEDROCK_TITAN_EMBED_MODEL_ID=amazon.titan-embed-text-v2:0
+BEDROCK_MINIMAX_MODEL_ID=minimax.minimax-m2.1
 ```
 
 Optional but recommended:
@@ -75,19 +113,19 @@ Optional but recommended:
 DB_PATH=data/crime_map.sqlite
 CORS_ALLOWED_ORIGINS=http://localhost:3001
 ADMIN_TOKEN=your_admin_token
-RSS_MAX_ITEMS_PER_FEED=8
-INGEST_MAX_ITEMS_PER_SOURCE=4
-MANUAL_INGEST_LOOKBACK_HOURS=4
-INGEST_WINDOW_OVERLAP_MINUTES=30
-INGEST_SOURCE_TIME_BUDGET_MS=30000
-INGEST_ITEM_TIMEOUT_MS=12000
-INGEST_RUN_TIME_BUDGET_MS=120000
+INGEST_ITEM_TIMEOUT_MS=30000
+INGEST_RUN_TIME_BUDGET_MS=480000
 ```
 
-### 3. Start Qdrant
+### 3. Start Crawl4AI (for simplified pipeline)
 
 ```bash
-docker run -d --name qdrant -p 6333:6333 -p 6334:6334 qdrant/qdrant
+docker run -d --name crawl4ai -p 11235:11235 unclecode/crawl4ai:latest
+```
+
+Or use the docker-compose file:
+```bash
+docker-compose -f docker-compose.crawl4ai.yml up -d
 ```
 
 ### 4. Run the backend API
@@ -121,14 +159,14 @@ firebase login
 FRONTEND_API_BASE_URL=https://backend-production-a0f6.up.railway.app npm run deploy:hosting
 ```
 
-`firebase.json` and [`.firebaserc`](/Users/itsivag/AntigravityProjects/chennai-gbu-map/.firebaserc) are configured to deploy `out/` to the `mapofmadras` Firebase Hosting site.
+`firebase.json` and `.firebaserc` are configured to deploy `out/` to the `mapofmadras` Firebase Hosting site.
 
 ## GitHub Actions deployment
 
 The repo includes:
 
-- frontend: [`.github/workflows/deploy-firebase-hosting.yml`](/Users/itsivag/AntigravityProjects/chennai-gbu-map/.github/workflows/deploy-firebase-hosting.yml)
-- backend CI: [`.github/workflows/deploy-backend-railway.yml`](/Users/itsivag/AntigravityProjects/chennai-gbu-map/.github/workflows/deploy-backend-railway.yml)
+- frontend: `.github/workflows/deploy-firebase-hosting.yml`
+- backend CI: `.github/workflows/deploy-backend-railway.yml`
 
 Configure these repository settings before using them:
 
@@ -141,11 +179,11 @@ Configure these repository settings before using them:
 FRONTEND_API_BASE_URL=https://backend-production-a0f6.up.railway.app
 FIREBASE_PROJECT_ID=chennai-gbu-map
 FIREBASE_TOKEN=your-firebase-cli-token
-BROWSERLESS_API_KEY=your-browserless-token
-BROWSERLESS_BASE_URL=https://production-sfo.browserless.io
+USE_SIMPLE_PIPELINE=true
+CRAWL4AI_URL=https://your-crawl4ai-service.up.railway.app
 AWS_BEARER_TOKEN_BEDROCK=your-bedrock-token
 AWS_REGION=us-east-1
-QDRANT_URL=http://localhost:6333
+EXTRACTION_CONFIDENCE_THRESHOLD=0.65
 ```
 
 Generate `FIREBASE_TOKEN` locally with:
@@ -154,15 +192,39 @@ Generate `FIREBASE_TOKEN` locally with:
 firebase login:ci
 ```
 
-Backend deployment now happens through Railway's native GitHub repo integration. The existing backend GitHub workflow is CI-only (`npm test`) so pushes still get backend validation in GitHub, while Railway handles the actual backend deploy from the connected `itsivag/map-of-madras` repo.
+Backend deployment happens through Railway's native GitHub repo integration. The existing backend GitHub workflow is CI-only (`npm test`) so pushes still get backend validation in GitHub, while Railway handles the actual backend deploy.
+
+## News Sources
+
+News sources are configured in `config/sources.json`. Each source needs:
+
+```json
+{
+  "id": "the-hindu-chennai",
+  "name": "The Hindu Chennai",
+  "homepageUrl": "https://www.thehindu.com/news/cities/chennai/",
+  "enabled": true,
+  "includePatterns": ["/news/cities/chennai/"],
+  "excludePatterns": ["/video/", "/photo/"],
+  "maxArticles": 8
+}
+```
+
+Current sources:
+- The Hindu Chennai
+- Times of India Chennai
+- Indian Express Chennai
+- New Indian Express Chennai
+- DT Next Chennai
+- Dinamani Chennai (Tamil)
 
 ## Important limitations
 
 - This app maps incidents from reported news coverage, not authoritative crime records.
-- Browserless usage is only needed when direct HTML fetches do not expose enough article content.
-- Browserless free-tier quotas can still be exhausted on heavier ingestion runs.
-- Geocoding can still be approximate when articles only mention broad locations.
+- News sources may have paywalls or anti-scraping measures.
+- Geocoding can be approximate when articles only mention broad locations.
 - Source quality and publisher behavior can affect extraction quality.
+- LLM extraction may miss incidents or misclassify them.
 
 ## Tech stack
 
@@ -172,17 +234,40 @@ Backend deployment now happens through Railway's native GitHub repo integration.
 - Node.js
 - Express
 - SQLite
-- Browserless
-- Amazon Bedrock
-- MiniMax
-- Titan Embeddings
-- Qdrant
+- Crawl4AI (web crawling)
+- Amazon Bedrock (LLM)
+- MiniMax (extraction model)
 - Firebase Hosting
 - Vitest
+
+### Optional (for semantic pipeline only)
+- Titan Embeddings
+- Qdrant (vector database)
 
 ## Tests
 
 ```bash
 npm test
 ```
-# Mon Mar 23 10:48:56 IST 2026
+
+## Architecture Comparison
+
+| Aspect | Simplified Pipeline | Semantic Pipeline |
+|--------|---------------------|-------------------|
+| Dependencies | Crawl4AI + Bedrock | Crawl4AI + Bedrock + Qdrant |
+| Vector DB | Not needed | Required |
+| Embeddings | Not needed | Titan + storage cost |
+| Token Cost | Higher (full article) | Lower (chunks only) |
+| Speed | Faster setup | Slower setup |
+| Accuracy | Good | Slightly better |
+| Best For | Most use cases | Very high volume |
+
+## Recent Updates
+
+- **2026-03-23**: Added simplified pipeline with direct LLM extraction (no vectors)
+- **2026-03-23**: Migrated from RSS-based to Crawl4AI-based discovery
+- **2026-03-23**: Made `feed_url` nullable to support web-first sources
+
+---
+
+*Last updated: 2026-03-23*

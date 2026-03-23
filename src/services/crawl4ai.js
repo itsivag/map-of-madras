@@ -96,6 +96,9 @@ export function createCrawl4AIClient({
         };
       } catch (error) {
         console.error(`[Crawl4AI] Error fetching ${url}: ${error.message}`);
+        if (error.name === 'AbortError') {
+          console.error(`[Crawl4AI] Request was aborted (timeout: ${timeoutMs}ms)`);
+        }
         throw error;
       } finally {
         timeout.clear();

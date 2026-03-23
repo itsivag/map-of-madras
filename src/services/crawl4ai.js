@@ -1,4 +1,7 @@
 function compactText(value = '') {
+  if (typeof value !== 'string') {
+    return '';
+  }
   return value.replace(/\s+/g, ' ').trim();
 }
 
@@ -127,8 +130,8 @@ export function createCrawl4AIService({
       // Return format compatible with existing rss.js expectations
       return {
         content: compactText(result.extractedContent || result.markdown || result.html || ''),
-        title: result.metadata.title || '',
-        publishedAt: result.metadata.publishedAt
+        title: String(result.metadata?.title || ''),
+        publishedAt: result.metadata?.publishedAt || null
       };
     }
   };

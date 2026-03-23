@@ -87,10 +87,15 @@ export function createCrawl4AIClient({
         }
 
         // Normalize response format
+        // Handle markdown which can be a string or an object with raw_markdown
+        const markdownContent = typeof result.markdown === 'string' 
+          ? result.markdown 
+          : (result.markdown?.raw_markdown || '');
+        
         return {
           html: result.cleaned_html || result.html || '',
-          markdown: result.markdown || '',
-          extractedContent: result.extracted_content || '',
+          markdown: markdownContent,
+          extractedContent: result.extracted_content || markdownContent || result.cleaned_html || result.html || '',
           metadata: {
             title: result.metadata?.title || result.title || '',
             publishedAt: result.metadata?.publishedAt || result.metadata?.date || null,

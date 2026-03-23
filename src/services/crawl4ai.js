@@ -54,7 +54,7 @@ export function createCrawl4AIClient({
             ...(apiToken && { Authorization: `Bearer ${apiToken}` })
           },
           body: JSON.stringify({
-            url,
+            urls: [url],
             priority: 10,
             result: {
               cleaned_html: true,
@@ -73,7 +73,13 @@ export function createCrawl4AIClient({
           );
         }
 
-        const result = await response.json();
+        const results = await response.json();
+        // Crawl4AI returns an array of results, get the first one
+        const result = Array.isArray(results) ? results[0] : results;
+
+        if (!result) {
+          throw new Error('Crawl4AI returned empty result');
+        }
 
         // Normalize response format
         return {

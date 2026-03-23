@@ -6,7 +6,7 @@ const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS sources (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  feed_url TEXT NOT NULL,
+  feed_url TEXT,
   website_url TEXT,
   enabled INTEGER NOT NULL DEFAULT 1,
   parser_mode TEXT NOT NULL DEFAULT 'rss',
@@ -177,12 +177,53 @@ export function initDatabase(dbPath, sourceConfigs = []) {
   dropLegacyOfficialSourceTables(db);
   ensureSourceColumns(db);
   ensureArticlesRawColumns(db);
+  migrateSourcesNotNullConstraint(db); // Make feed_url nullable
   db.exec(INDEX_SQL);
   ensureLegacyIncidentSourceBackfill(db);
 
   seedSources(db, sourceConfigs);
   migrateSourceConfig(db);
   return db;
+}
+
+function migrateSourcesNotNullConstraint(db) {
+  // Check if feed_url has NOT NULL constraint
+  const columns = db.prepare("PRAGMA table_info('sources')").all();
+  const feedUrlCol = columns.find(c => c.name === 'feed_url');
+  
+  if (feedUrlCol && feedUrlCol.notnull === 1) {
+    // SQLite doesn't support ALTER COLUMN, so we need to recreate the table
+    db.exec(`
+      CREATE TABLE sources_new (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        feed_url TEXT,
+        website_url TEXT,
+        homepage_url TEXT,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        parser_mode TEXT NOT NULL DEFAULT 'rss',
+        crime_keyword_filter INTEGER NOT NULL DEFAULT 0,
+        html_link_include_patterns TEXT,
+        html_link_exclude_patterns TEXT,
+        include_patterns TEXT,
+        exclude_patterns TEXT,
+        max_articles INTEGER DEFAULT 8,
+        last_success_at TEXT,
+        last_error TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      
+      INSERT INTO sources_new SELECT 
+        id, name, feed_url, website_url, NULL, enabled, parser_mode, 
+        crime_keyword_filter, html_link_include_patterns, html_link_exclude_patterns,
+        NULL, NULL, NULL, last_success_at, last_error, created_at, updated_at
+      FROM sources;
+      
+      DROP TABLE sources;
+      ALTER TABLE sources_new RENAME TO sources;
+    `);
+  }
 }
 
 function migrateSourceConfig(db) {
@@ -275,7 +316,7 @@ function seedSources(db, sourceConfigs) {
       statement.run({
         id: source.id,
         name: source.name,
-        feedUrl: source.feedUrl || null,
+        feedUrl: source.feedUrl || source.homepageUrl || null,
         websiteUrl: source.websiteUrl || null,
         homepageUrl: homepageUrl || null,
         enabled: source.enabled ? 1 : 0,
